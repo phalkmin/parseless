@@ -1,0 +1,11 @@
+.md4ai-copy-status {
+	font-style: italic;
+	margin-left: 6px;
+}
+
+.md4ai-preview {
+	font-size: 11px;
+	max-height: 200px;
+	overflow: auto;
+	white-space: pre-wrap;
+}
