@@ -29,7 +29,7 @@ Site owners serve AI systems lightweight, structured content instead of bloated 
 
 == Installation ==
 
-1. Upload the `wp-botfood` folder to `/wp-content/plugins/`
+1. Upload the \`parseless\` folder to `/wp-content/plugins/`
 2. Activate the plugin through the **Plugins** menu in WordPress
 3. That's it — AI crawlers will automatically receive Markdown content, and you can preview any post at `?format=md`
 

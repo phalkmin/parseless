@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<ruleset name="WP Botfood">
+	<description>WordPress Coding Standards for the plugin source.</description>
+
+	<arg name="extensions" value="php"/>
+
+	<file>wp-botfood.php</file>
+	<file>uninstall.php</file>
+	<file>includes</file>
+	<file>admin</file>
+
+	<exclude-pattern>*/.worktrees/*</exclude-pattern>
+
+	<rule ref="WordPress"/>
+</ruleset>

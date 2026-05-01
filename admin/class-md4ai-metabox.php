@@ -62,7 +62,7 @@ class MD4AI_Metabox {
 		foreach ( $post_types as $type ) {
 			add_meta_box(
 				'md4ai-preview',
-				__( 'ParseLess — Markdown Preview', 'wp-botfood' ),
+				__( 'ParseLess — Markdown Preview', 'parseless' ),
 				array( __CLASS__, 'render' ),
 				$type,
 				'side',
@@ -84,23 +84,23 @@ class MD4AI_Metabox {
 		?>
 		<p>
 			<a href="<?php echo esc_url( $md_url ); ?>" target="_blank" rel="noopener" class="button button-secondary">
-				<?php esc_html_e( 'View as Markdown', 'wp-botfood' ); ?>
+				<?php esc_html_e( 'View as Markdown', 'parseless' ); ?>
 			</a>
 		</p>
 		<p>
 			<button type="button" class="button button-secondary" id="md4ai-copy-btn"
 				data-post-id="<?php echo esc_attr( (string) $post->ID ); ?>"
 				data-nonce="<?php echo esc_attr( $nonce ); ?>"
-				data-fetching-text="<?php echo esc_attr__( 'Fetching...', 'wp-botfood' ); ?>"
-				data-error-text="<?php echo esc_attr__( 'Error.', 'wp-botfood' ); ?>"
-				data-copied-text="<?php echo esc_attr__( 'Copied!', 'wp-botfood' ); ?>">
-				<?php esc_html_e( 'Copy Markdown', 'wp-botfood' ); ?>
+				data-fetching-text="<?php echo esc_attr__( 'Fetching...', 'parseless' ); ?>"
+				data-error-text="<?php echo esc_attr__( 'Error.', 'parseless' ); ?>"
+				data-copied-text="<?php echo esc_attr__( 'Copied!', 'parseless' ); ?>">
+				<?php esc_html_e( 'Copy Markdown', 'parseless' ); ?>
 			</button>
 			<span id="md4ai-copy-status" class="md4ai-copy-status"></span>
 		</p>
 		<?php if ( '' !== $preview ) : ?>
 			<details>
-				<summary><?php esc_html_e( 'Preview (first 500 chars)', 'wp-botfood' ); ?></summary>
+				<summary><?php esc_html_e( 'Preview (first 500 chars)', 'parseless' ); ?></summary>
 				<pre class="md4ai-preview"><?php echo esc_html( $preview ); ?></pre>
 			</details>
 		<?php endif; ?>

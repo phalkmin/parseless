@@ -27,10 +27,10 @@ class MD4AI_Settings {
 	 */
 	public static function register_menu(): void {
 		add_management_page(
-			__( 'ParseLess Settings', 'wp-botfood' ),
-			__( 'ParseLess', 'wp-botfood' ),
+			__( 'ParseLess Settings', 'parseless' ),
+			__( 'ParseLess', 'parseless' ),
 			'manage_options',
-			'wp-botfood',
+			'parseless',
 			array( __CLASS__, 'render_page' )
 		);
 	}
@@ -43,7 +43,7 @@ class MD4AI_Settings {
 			return;
 		}
 		if ( ! wp_verify_nonce( sanitize_key( $_POST['_md4ai_nonce'] ), 'md4ai_save_settings' ) ) {
-			wp_die( esc_html__( 'Security check failed.', 'wp-botfood' ) );
+			wp_die( esc_html__( 'Security check failed.', 'parseless' ) );
 		}
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
@@ -83,7 +83,7 @@ class MD4AI_Settings {
 		}
 
 		update_option( 'md4ai_settings', $settings );
-		add_settings_error( 'md4ai', 'md4ai_saved', __( 'Settings saved.', 'wp-botfood' ), 'updated' );
+		add_settings_error( 'md4ai', 'md4ai_saved', __( 'Settings saved.', 'parseless' ), 'updated' );
 	}
 
 	/**
@@ -98,26 +98,26 @@ class MD4AI_Settings {
 		$s           = md4ai_get_settings();
 		$all_types   = md4ai_supported_post_types();
 		$ttl_options = array(
-			HOUR_IN_SECONDS     => __( '1 Hour', 'wp-botfood' ),
-			6 * HOUR_IN_SECONDS => __( '6 Hours', 'wp-botfood' ),
-			DAY_IN_SECONDS      => __( '1 Day', 'wp-botfood' ),
-			WEEK_IN_SECONDS     => __( '1 Week', 'wp-botfood' ),
+			HOUR_IN_SECONDS     => __( '1 Hour', 'parseless' ),
+			6 * HOUR_IN_SECONDS => __( '6 Hours', 'parseless' ),
+			DAY_IN_SECONDS      => __( '1 Day', 'parseless' ),
+			WEEK_IN_SECONDS     => __( '1 Week', 'parseless' ),
 		);
 		?>
 		<div class="wrap">
-			<h1><?php esc_html_e( 'ParseLess Settings', 'wp-botfood' ); ?></h1>
-			<form method="post" action="<?php echo esc_url( admin_url( 'tools.php?page=wp-botfood' ) ); ?>">
+			<h1><?php esc_html_e( 'ParseLess Settings', 'parseless' ); ?></h1>
+			<form method="post" action="<?php echo esc_url( admin_url( 'tools.php?page=parseless' ) ); ?>">
 				<?php wp_nonce_field( 'md4ai_save_settings', '_md4ai_nonce' ); ?>
 
 				<table class="form-table" role="presentation">
 					<tr>
-						<th scope="row"><?php esc_html_e( 'Detection Mode', 'wp-botfood' ); ?></th>
+						<th scope="row"><?php esc_html_e( 'Detection Mode', 'parseless' ); ?></th>
 						<td>
 							<?php
 							$modes = array(
-								'both'        => __( 'Query param + User-Agent (default)', 'wp-botfood' ),
-								'query_param' => __( 'Query param only', 'wp-botfood' ),
-								'ua'          => __( 'User-Agent only', 'wp-botfood' ),
+								'both'        => __( 'Query param + User-Agent (default)', 'parseless' ),
+								'query_param' => __( 'Query param only', 'parseless' ),
+								'ua'          => __( 'User-Agent only', 'parseless' ),
 							);
 							foreach ( $modes as $val => $label ) :
 								?>
@@ -131,30 +131,30 @@ class MD4AI_Settings {
 					</tr>
 					<tr>
 						<th scope="row">
-							<label for="md4ai_query_param_name"><?php esc_html_e( 'Query Param Name', 'wp-botfood' ); ?></label>
+							<label for="md4ai_query_param_name"><?php esc_html_e( 'Query Param Name', 'parseless' ); ?></label>
 						</th>
 						<td>
 							<input type="text" id="md4ai_query_param_name" name="query_param_name"
 								value="<?php echo esc_attr( $s['query_param_name'] ); ?>" class="regular-text">
 							<p class="description">
-								<?php esc_html_e( 'The URL parameter name. Default is "format" (so ?format=md). Change only if it conflicts with a theme or plugin.', 'wp-botfood' ); ?>
+								<?php esc_html_e( 'The URL parameter name. Default is "format" (so ?format=md). Change only if it conflicts with a theme or plugin.', 'parseless' ); ?>
 							</p>
 						</td>
 					</tr>
 					<tr>
 						<th scope="row">
-							<label for="md4ai_bot_list"><?php esc_html_e( 'Bot List', 'wp-botfood' ); ?></label>
+							<label for="md4ai_bot_list"><?php esc_html_e( 'Bot List', 'parseless' ); ?></label>
 						</th>
 						<td>
 							<textarea id="md4ai_bot_list" name="bot_list" rows="10" class="large-text code"><?php echo esc_textarea( $s['bot_list'] ); ?></textarea>
 							<p class="description">
-								<?php esc_html_e( 'One User-Agent substring per line. Leave blank to use the built-in defaults (GPTBot, ClaudeBot, etc.).', 'wp-botfood' ); ?>
+								<?php esc_html_e( 'One User-Agent substring per line. Leave blank to use the built-in defaults (GPTBot, ClaudeBot, etc.).', 'parseless' ); ?>
 							</p>
 						</td>
 					</tr>
 					<tr>
 						<th scope="row">
-							<label for="md4ai_cache_ttl"><?php esc_html_e( 'Cache TTL', 'wp-botfood' ); ?></label>
+							<label for="md4ai_cache_ttl"><?php esc_html_e( 'Cache TTL', 'parseless' ); ?></label>
 						</th>
 						<td>
 							<select id="md4ai_cache_ttl" name="cache_ttl">
@@ -167,7 +167,7 @@ class MD4AI_Settings {
 						</td>
 					</tr>
 					<tr>
-						<th scope="row"><?php esc_html_e( 'Enabled Post Types', 'wp-botfood' ); ?></th>
+						<th scope="row"><?php esc_html_e( 'Enabled Post Types', 'parseless' ); ?></th>
 						<td>
 							<?php foreach ( $all_types as $type ) : ?>
 								<label>
@@ -178,23 +178,23 @@ class MD4AI_Settings {
 								</label><br>
 							<?php endforeach; ?>
 							<p class="description">
-								<?php esc_html_e( 'Uncheck post types you do not want served as Markdown. All are enabled by default.', 'wp-botfood' ); ?>
+								<?php esc_html_e( 'Uncheck post types you do not want served as Markdown. All are enabled by default.', 'parseless' ); ?>
 							</p>
 						</td>
 					</tr>
 					<tr>
-						<th scope="row"><?php esc_html_e( 'llms.txt', 'wp-botfood' ); ?></th>
+						<th scope="row"><?php esc_html_e( 'llms.txt', 'parseless' ); ?></th>
 						<td>
 							<label>
 								<input type="checkbox" name="llmstxt_enabled" value="1"
 									<?php checked( (bool) $s['llmstxt_enabled'] ); ?>>
-								<?php esc_html_e( 'Enable /llms.txt endpoint', 'wp-botfood' ); ?>
+								<?php esc_html_e( 'Enable /llms.txt endpoint', 'parseless' ); ?>
 							</label>
 						</td>
 					</tr>
 					<tr>
 						<th scope="row">
-							<label for="md4ai_llmstxt_max_posts"><?php esc_html_e( 'llms.txt Max Posts', 'wp-botfood' ); ?></label>
+							<label for="md4ai_llmstxt_max_posts"><?php esc_html_e( 'llms.txt Max Posts', 'parseless' ); ?></label>
 						</th>
 						<td>
 							<input type="number" id="md4ai_llmstxt_max_posts" name="llmstxt_max_posts" min="1" max="1000"
@@ -202,18 +202,18 @@ class MD4AI_Settings {
 						</td>
 					</tr>
 					<tr>
-						<th scope="row"><?php esc_html_e( 'Include Frontmatter', 'wp-botfood' ); ?></th>
+						<th scope="row"><?php esc_html_e( 'Include Frontmatter', 'parseless' ); ?></th>
 						<td>
 							<label>
 								<input type="checkbox" name="include_frontmatter" value="1"
 									<?php checked( (bool) $s['include_frontmatter'] ); ?>>
-								<?php esc_html_e( 'Add YAML frontmatter (title, url, author, date, categories, tags, excerpt) at the top of every Markdown output', 'wp-botfood' ); ?>
+								<?php esc_html_e( 'Add YAML frontmatter (title, url, author, date, categories, tags, excerpt) at the top of every Markdown output', 'parseless' ); ?>
 							</label>
 						</td>
 					</tr>
 				</table>
 
-				<?php submit_button( __( 'Save Settings', 'wp-botfood' ) ); ?>
+				<?php submit_button( __( 'Save Settings', 'parseless' ) ); ?>
 			</form>
 		</div>
 		<?php
