@@ -4,7 +4,7 @@
 
 	<arg name="extensions" value="php"/>
 
-	<file>wp-botfood.php</file>
+	<file>parseless.php</file>
 	<file>uninstall.php</file>
 	<file>includes</file>
 	<file>admin</file>
