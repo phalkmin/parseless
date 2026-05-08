@@ -2,7 +2,7 @@
 /**
  * LLMs.txt endpoint.
  *
- * @package WP_Botfood
+ * @package WP_Parseless
  */
 
 if ( ! defined( 'ABSPATH' ) ) {

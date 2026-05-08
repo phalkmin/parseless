@@ -2,7 +2,7 @@
 /**
  * Markdown cache.
  *
- * @package WP_Botfood
+ * @package WP_Parseless
  */
 
 if ( ! defined( 'ABSPATH' ) ) {

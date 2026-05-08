@@ -2,7 +2,7 @@
 /**
  * Settings helpers.
  *
- * @package WP_Botfood
+ * @package WP_Parseless
  */
 
 if ( ! defined( 'ABSPATH' ) ) {

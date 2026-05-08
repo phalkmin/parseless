@@ -2,7 +2,7 @@
 /**
  * Plugin uninstall cleanup.
  *
- * @package WP_Botfood
+ * @package WP_Parseless
  */
 
 if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {

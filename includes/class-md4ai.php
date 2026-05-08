@@ -2,7 +2,7 @@
 /**
  * Main Markdown serving controller.
  *
- * @package WP_Botfood
+ * @package WP_Parseless
  */
 
 if ( ! defined( 'ABSPATH' ) ) {

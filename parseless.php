@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name:       ParseLess
- * Plugin URI:        https://github.com/phalkmin/wp-botfood
+ * Plugin URI:        https://github.com/phalkmin/parseless
  * Description:       Serves WordPress content as Markdown to AI crawlers and on ?format=md requests. Also exposes /llms.txt.
  * Version:           0.3.0
  * Requires at least: 6.8
@@ -12,7 +12,7 @@
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       parseless
  *
- * @package WP_Botfood
+ * @package WP_Parseless
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
