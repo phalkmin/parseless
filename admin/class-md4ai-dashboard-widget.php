@@ -1,6 +1,6 @@
 <?php
 /**
- * wp-admin dashboard widget.
+ * WP-admin dashboard widget.
  *
  * @package WP_Parseless
  */

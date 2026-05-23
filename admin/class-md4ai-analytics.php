@@ -68,7 +68,9 @@ class MD4AI_Analytics {
 	}
 
 	/**
-	 * @param array<int, array{bot_name:string,hits:int,last_seen:string}> $rows
+	 * Renders the per-bot breakdown table.
+	 *
+	 * @param array<int, array{bot_name:string,hits:int,last_seen:string}> $rows Aggregated bot rows.
 	 */
 	private static function render_bot_table( array $rows ): void {
 		echo '<h2>' . esc_html__( 'Bot breakdown (30 days)', 'parseless' ) . '</h2>';
@@ -92,7 +94,9 @@ class MD4AI_Analytics {
 	}
 
 	/**
-	 * @param array<int, array{post_id:int,hits:int,last_seen:string}> $rows
+	 * Renders the top-posts table.
+	 *
+	 * @param array<int, array{post_id:int,hits:int,last_seen:string}> $rows Aggregated post rows.
 	 */
 	private static function render_post_table( array $rows ): void {
 		echo '<h2>' . esc_html__( 'Top URLs (30 days)', 'parseless' ) . '</h2>';
@@ -122,7 +126,9 @@ class MD4AI_Analytics {
 	}
 
 	/**
-	 * @param array<int, array{user_agent:string,hits:int,last_seen:string}> $rows
+	 * Renders the unknown-UA review table.
+	 *
+	 * @param array<int, array{user_agent:string,hits:int,last_seen:string}> $rows Unknown UA rows.
 	 */
 	private static function render_unknown_ua_table( array $rows ): void {
 		echo '<h2>' . esc_html__( 'Unknown bot-like UAs (30 days)', 'parseless' ) . '</h2>';
@@ -152,6 +158,9 @@ class MD4AI_Analytics {
 		echo '</tbody></table>';
 	}
 
+	/**
+	 * Renders the CSV export form.
+	 */
 	private static function render_export_form(): void {
 		$url = admin_url( 'admin-post.php' );
 		echo '<h2>' . esc_html__( 'Export', 'parseless' ) . '</h2>';
@@ -170,6 +179,11 @@ class MD4AI_Analytics {
 		echo '</form>';
 	}
 
+	/**
+	 * Enqueues the inline JS that powers analytics tab buttons.
+	 *
+	 * @param string $hook Current admin page hook.
+	 */
 	public static function enqueue_inline_script( string $hook ): void {
 		if ( 'tools_page_parseless' !== $hook ) {
 			return;
@@ -217,6 +231,9 @@ class MD4AI_Analytics {
 		wp_add_inline_script( 'common', $script );
 	}
 
+	/**
+	 * AJAX handler for purging all logged requests.
+	 */
 	public static function ajax_purge_logs(): void {
 		check_ajax_referer( 'md4ai_purge_logs', 'nonce' );
 		if ( ! current_user_can( 'manage_options' ) ) {
@@ -226,6 +243,9 @@ class MD4AI_Analytics {
 		wp_send_json_success();
 	}
 
+	/**
+	 * AJAX handler for adding an unknown UA to the bot list.
+	 */
 	public static function ajax_add_ua_to_list(): void {
 		check_ajax_referer( 'md4ai_add_ua_to_list', 'nonce' );
 		if ( ! current_user_can( 'manage_options' ) ) {
@@ -247,6 +267,9 @@ class MD4AI_Analytics {
 		wp_send_json_success();
 	}
 
+	/**
+	 * Streams logged requests as CSV to the browser.
+	 */
 	public static function export_csv(): void {
 		check_admin_referer( 'md4ai_export_csv', '_md4ai_export_nonce' );
 		if ( ! current_user_can( 'manage_options' ) ) {

@@ -50,7 +50,7 @@ class MD4AI_Stats {
 				max( 1, $days )
 			)
 		);
-		if ( ! $row || (int) $row->total === 0 ) {
+		if ( ! $row || 0 === (int) $row->total ) {
 			return null;
 		}
 		return (float) $row->hits / (float) $row->total;
