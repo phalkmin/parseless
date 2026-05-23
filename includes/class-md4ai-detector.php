@@ -103,6 +103,34 @@ class MD4AI_Detector {
 	}
 
 	/**
+	 * Returns the matched heuristic token if the UA looks bot-like but is not on the configured list.
+	 *
+	 * @return string Empty string if no heuristic match.
+	 */
+	public static function unknown_ua_match(): string {
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$ua = wp_unslash( $_SERVER['HTTP_USER_AGENT'] ?? '' );
+		if ( '' === $ua ) {
+			return '';
+		}
+
+		if ( self::is_bot_request() ) {
+			return '';
+		}
+
+		$tokens = apply_filters(
+			'md4ai_unknown_ua_tokens',
+			array( 'bot', 'crawler', 'spider', 'gpt', 'claude', 'anthropic', 'fetch', 'ai/' )
+		);
+		foreach ( $tokens as $token ) {
+			if ( false !== stripos( $ua, (string) $token ) ) {
+				return (string) $token;
+			}
+		}
+		return '';
+	}
+
+	/**
 	 * Determines whether a post can be served as Markdown.
 	 *
 	 * @param WP_Post $post Post object.

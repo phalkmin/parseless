@@ -2,9 +2,9 @@
 Contributors: phalkmin
 Tags: ai, markdown, llms, bots, crawlers
 Requires at least: 6.8
-Tested up to: 6.9
+Tested up to: 7.0
 Requires PHP: 8.2
-Stable tag: 0.3.0
+Stable tag: 0.4.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -104,7 +104,33 @@ ParseLess runs `the_content` filter before conversion, so anything those builder
 
 Optionally, yes. Enable **Include frontmatter** in the settings to prepend a YAML block with title, URL, author, date, categories, tags, and excerpt.
 
+== Privacy and data collection ==
+
+When logging is enabled (off by default), ParseLess records the following for
+each Markdown request:
+
+* Post ID, URL, and request timestamp
+* The full User-Agent header
+* A salted SHA-256 hash of the requester's IP address (the raw IP is never stored)
+* Matched bot identifier, bytes served, and whether the response came from cache
+
+IP hashes cannot be reversed from an email address, so the WordPress privacy
+exporter/eraser tools will report no personal data on demand.
+
+Logs are pruned daily according to the configured retention window
+(7/30/90/365 days, default 30). Site owners can disable logging or click
+"Delete all logged requests" at any time from Tools → ParseLess.
+
 == Changelog ==
+
+= 0.4.0 =
+* New: optional request logging to a custom database table — see who's fetching what, with logging off by default until you turn it on.
+* New: "ParseLess — AI Traffic" dashboard widget on wp-admin showing top bots and top fetched URLs over the past week.
+* New: Analytics tab on Tools → ParseLess with a bot breakdown, top URLs, unknown bot-like UAs, and CSV export.
+* New: one-click "Add to bot list" action for unknown UAs that look like AI crawlers.
+* New: daily retention pruning with configurable windows (7/30/90/365 days).
+* New: salted SHA-256 IP hashing and WordPress privacy exporter/eraser registrations.
+* New: "Delete all logged requests" button for a one-click purge.
 
 = 0.3.0 =
 * Plugin renamed to ParseLess.

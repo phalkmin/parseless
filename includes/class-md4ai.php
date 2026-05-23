@@ -29,6 +29,7 @@ class MD4AI {
 	public static function maybe_serve_markdown(): void {
 		$should_serve = apply_filters( 'md4ai_should_serve_markdown', MD4AI_Detector::should_serve() );
 		if ( ! $should_serve ) {
+			self::maybe_log_unknown_ua();
 			return;
 		}
 
@@ -50,16 +51,106 @@ class MD4AI {
 			return;
 		}
 
-		$markdown = MD4AI_Cache::get( $post_id );
+		$cache_hit = true;
+		$markdown  = MD4AI_Cache::get( $post_id );
 		if ( false === $markdown ) {
-			$markdown = self::build_markdown_for_preview( $post );
+			$markdown  = self::build_markdown_for_preview( $post );
+			$cache_hit = false;
 			MD4AI_Cache::set( $post_id, $markdown );
 		}
+
+		MD4AI_Logger::record(
+			array(
+				'post_id'      => $post_id,
+				'url'          => self::current_url(),
+				'user_agent'   => self::current_ua(),
+				'bot_name'     => self::resolve_bot_name(),
+				'bytes_served' => strlen( $markdown ),
+				'cache_hit'    => $cache_hit,
+			)
+		);
 
 		header( 'Content-Type: text/markdown; charset=utf-8' );
 		header( 'X-Robots-Tag: noindex' );
 		echo esc_html( $markdown );
 		exit;
+	}
+
+	/**
+	 * Logs a request whose UA matched the unknown-UA heuristic.
+	 */
+	private static function maybe_log_unknown_ua(): void {
+		if ( ! md4ai_get_setting( 'enable_logging' ) ) {
+			return;
+		}
+		if ( ! md4ai_get_setting( 'log_unknown_uas' ) ) {
+			return;
+		}
+		if ( '' === MD4AI_Detector::unknown_ua_match() ) {
+			return;
+		}
+
+		MD4AI_Logger::record(
+			array(
+				'post_id'      => (int) get_queried_object_id(),
+				'url'          => self::current_url(),
+				'user_agent'   => self::current_ua(),
+				'bot_name'     => 'unknown',
+				'bytes_served' => 0,
+				'cache_hit'    => false,
+			)
+		);
+	}
+
+	/**
+	 * Resolves the bot identifier for the current request.
+	 *
+	 * @return string Bot UA substring, "manual", or "" if unknown.
+	 */
+	private static function resolve_bot_name(): string {
+		$param_name = (string) md4ai_get_setting( 'query_param_name' );
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$param = isset( $_GET[ $param_name ] ) ? sanitize_key( wp_unslash( $_GET[ $param_name ] ) ) : '';
+		if ( 'md' === $param ) {
+			return 'manual';
+		}
+		$ua = self::current_ua();
+		if ( '' === $ua ) {
+			return '';
+		}
+		$saved_list = md4ai_get_setting( 'bot_list' );
+		if ( is_string( $saved_list ) && '' !== trim( $saved_list ) ) {
+			$bots = array_filter( array_map( 'trim', explode( "\n", $saved_list ) ) );
+		} else {
+			$bots = apply_filters( 'md4ai_bot_list', array() );
+		}
+		foreach ( $bots as $bot ) {
+			if ( false !== stripos( $ua, (string) $bot ) ) {
+				return (string) $bot;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * Returns the current request URL.
+	 *
+	 * @return string
+	 */
+	private static function current_url(): string {
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$path = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : '';
+		return esc_url_raw( home_url( $path ) );
+	}
+
+	/**
+	 * Returns the current request User-Agent string.
+	 *
+	 * @return string
+	 */
+	private static function current_ua(): string {
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		return (string) wp_unslash( $_SERVER['HTTP_USER_AGENT'] ?? '' );
 	}
 
 	/**
