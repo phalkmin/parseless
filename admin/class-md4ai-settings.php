@@ -57,7 +57,7 @@ class MD4AI_Settings {
 		$cache_ttl          = isset( $_POST['cache_ttl'] ) ? absint( wp_unslash( $_POST['cache_ttl'] ) ) : 0;
 		$enabled_post_types = isset( $_POST['enabled_post_types'] ) ? array_map( 'sanitize_key', wp_unslash( (array) $_POST['enabled_post_types'] ) ) : array();
 		$llmstxt_max_posts  = isset( $_POST['llmstxt_max_posts'] ) ? absint( wp_unslash( $_POST['llmstxt_max_posts'] ) ) : $defaults['llmstxt_max_posts'];
-		$retention_days = isset( $_POST['log_retention_days'] ) ? absint( wp_unslash( $_POST['log_retention_days'] ) ) : $defaults['log_retention_days'];
+		$retention_days     = isset( $_POST['log_retention_days'] ) ? absint( wp_unslash( $_POST['log_retention_days'] ) ) : $defaults['log_retention_days'];
 
 		$settings = array(
 			'detection_mode'      => in_array( $detection_mode, array( 'both', 'query_param', 'ua' ), true )
@@ -76,6 +76,7 @@ class MD4AI_Settings {
 			),
 			'llmstxt_enabled'     => isset( $_POST['llmstxt_enabled'] ),
 			'llmstxt_max_posts'   => $llmstxt_max_posts,
+			'sitemap_enabled'     => isset( $_POST['sitemap_enabled'] ),
 			'include_frontmatter' => isset( $_POST['include_frontmatter'] ),
 			'enable_logging'      => isset( $_POST['enable_logging'] ),
 			'log_retention_days'  => in_array( $retention_days, array( 7, 30, 90, 365 ), true )
@@ -136,9 +137,9 @@ class MD4AI_Settings {
 	 * Renders the settings form (extracted from the legacy single-page render).
 	 */
 	public static function render_settings_form(): void {
-		$s           = md4ai_get_settings();
-		$all_types   = md4ai_supported_post_types();
-		$ttl_options = array(
+		$s                 = md4ai_get_settings();
+		$all_types         = md4ai_supported_post_types();
+		$ttl_options       = array(
 			HOUR_IN_SECONDS     => __( '1 Hour', 'parseless' ),
 			6 * HOUR_IN_SECONDS => __( '6 Hours', 'parseless' ),
 			DAY_IN_SECONDS      => __( '1 Day', 'parseless' ),
@@ -229,6 +230,18 @@ class MD4AI_Settings {
 					<td>
 						<input type="number" id="md4ai_llmstxt_max_posts" name="llmstxt_max_posts" min="1" max="1000"
 							value="<?php echo esc_attr( (string) (int) $s['llmstxt_max_posts'] ); ?>" class="small-text">
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><?php esc_html_e( 'AI sitemap', 'parseless' ); ?></th>
+					<td>
+						<label>
+							<input type="checkbox" name="sitemap_enabled" value="1" <?php checked( (bool) $s['sitemap_enabled'] ); ?>>
+							<?php esc_html_e( 'Expose /botfood-sitemap.xml and advertise it in robots.txt', 'parseless' ); ?>
+						</label>
+						<p class="description">
+							<?php esc_html_e( 'Lists the Markdown version of every public post for AI crawlers.', 'parseless' ); ?>
+						</p>
 					</td>
 				</tr>
 				<tr>

@@ -14,9 +14,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class MD4AI_Analytics {
 
-	public const AJAX_PURGE_LOGS    = 'md4ai_purge_logs';
-	public const AJAX_ADD_TO_LIST   = 'md4ai_add_ua_to_list';
-	public const ACTION_EXPORT_CSV  = 'md4ai_export_csv';
+	public const AJAX_PURGE_LOGS   = 'md4ai_purge_logs';
+	public const AJAX_ADD_TO_LIST  = 'md4ai_add_ua_to_list';
+	public const ACTION_EXPORT_CSV = 'md4ai_export_csv';
 
 	/**
 	 * Registers hooks.
@@ -61,10 +61,27 @@ class MD4AI_Analytics {
 		);
 		echo '</p>';
 
+		self::render_bot_chart();
 		self::render_bot_table( MD4AI_Stats::top_bots( 30, 50 ) );
 		self::render_post_table( MD4AI_Stats::top_posts( 30, 50 ) );
 		self::render_unknown_ua_table( MD4AI_Stats::unknown_uas( 30, 50 ) );
 		self::render_export_form();
+	}
+
+	/**
+	 * Renders the bot-activity-over-time chart canvas.
+	 *
+	 * The chart itself is drawn by Chart.js using data localised in
+	 * {@see self::enqueue_inline_script()}. When there is no data, the canvas
+	 * is skipped entirely.
+	 */
+	private static function render_bot_chart(): void {
+		$chart = MD4AI_Stats::daily_bot_hits( 30, 5 );
+		if ( empty( $chart['datasets'] ) ) {
+			return;
+		}
+		echo '<h2>' . esc_html__( 'Bot activity (30 days)', 'parseless' ) . '</h2>';
+		echo '<div class="md4ai-chart-wrap" style="max-width:900px;height:320px;"><canvas id="md4ai-bot-chart"></canvas></div>';
 	}
 
 	/**
@@ -188,6 +205,9 @@ class MD4AI_Analytics {
 		if ( 'tools_page_parseless' !== $hook ) {
 			return;
 		}
+
+		self::enqueue_chart();
+
 		$script = "
 		(function(){
 			document.addEventListener('click', function(e){
@@ -232,6 +252,66 @@ class MD4AI_Analytics {
 	}
 
 	/**
+	 * Enqueues the bundled Chart.js and feeds it the bot-activity data.
+	 *
+	 * Only runs on the analytics tab when logging is on and there is data to
+	 * plot, so the 200KB asset is never loaded needlessly.
+	 */
+	private static function enqueue_chart(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only tab switch, no state change.
+		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'settings';
+		if ( 'analytics' !== $tab || ! md4ai_get_setting( 'enable_logging' ) ) {
+			return;
+		}
+
+		$chart = MD4AI_Stats::daily_bot_hits( 30, 5 );
+		if ( empty( $chart['datasets'] ) ) {
+			return;
+		}
+
+		wp_enqueue_script(
+			'md4ai-chartjs',
+			MD4AI_PLUGIN_URL . 'assets/js/chart.umd.min.js',
+			array(),
+			'4.4.1',
+			true
+		);
+
+		wp_add_inline_script(
+			'md4ai-chartjs',
+			'window.md4aiChart = ' . wp_json_encode( $chart ) . ';',
+			'before'
+		);
+
+		$init = "
+		(function(){
+			var el = document.getElementById('md4ai-bot-chart');
+			if (!el || typeof Chart === 'undefined' || !window.md4aiChart) { return; }
+			var palette = ['#2271b1','#d63638','#00a32a','#dba617','#8c5cff','#3582c4'];
+			var datasets = window.md4aiChart.datasets.map(function(ds, i){
+				var c = palette[i % palette.length];
+				ds.borderColor = c;
+				ds.backgroundColor = c;
+				ds.tension = 0.2;
+				ds.pointRadius = 2;
+				return ds;
+			});
+			new Chart(el, {
+				type: 'line',
+				data: { labels: window.md4aiChart.labels, datasets: datasets },
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					interaction: { mode: 'index', intersect: false },
+					scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+				}
+			});
+		})();
+		";
+		wp_add_inline_script( 'md4ai-chartjs', $init );
+	}
+
+	/**
 	 * AJAX handler for purging all logged requests.
 	 */
 	public static function ajax_purge_logs(): void {
@@ -256,9 +336,9 @@ class MD4AI_Analytics {
 			wp_send_json_error( array( 'message' => __( 'Empty UA', 'parseless' ) ) );
 		}
 
-		$settings   = md4ai_get_settings();
-		$bot_list   = (string) $settings['bot_list'];
-		$lines      = '' === trim( $bot_list ) ? array() : array_filter( array_map( 'trim', explode( "\n", $bot_list ) ) );
+		$settings = md4ai_get_settings();
+		$bot_list = (string) $settings['bot_list'];
+		$lines    = '' === trim( $bot_list ) ? array() : array_filter( array_map( 'trim', explode( "\n", $bot_list ) ) );
 		if ( ! in_array( $ua, $lines, true ) ) {
 			$lines[] = $ua;
 		}

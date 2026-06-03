@@ -23,6 +23,7 @@ function md4ai_get_default_settings(): array {
 		'enabled_post_types'  => array(),
 		'llmstxt_enabled'     => true,
 		'llmstxt_max_posts'   => 100,
+		'sitemap_enabled'     => true,
 		'include_frontmatter' => false,
 		'enable_logging'      => false,
 		'log_retention_days'  => 30,

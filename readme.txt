@@ -4,7 +4,7 @@ Tags: ai, markdown, llms, bots, crawlers
 Requires at least: 6.8
 Tested up to: 7.0
 Requires PHP: 8.2
-Stable tag: 0.4.0
+Stable tag: 0.5.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -122,6 +122,11 @@ Logs are pruned daily according to the configured retention window
 "Delete all logged requests" at any time from Tools → ParseLess.
 
 == Changelog ==
+
+= 0.5.0 =
+* New: bot activity chart on the Analytics tab — see how each AI crawler's traffic trends across the last 30 days at a glance.
+* New: AI sitemap at /botfood-sitemap.xml listing the Markdown version of every public post, automatically advertised in robots.txt so AI crawlers can find it.
+* The sitemap can be toggled off under Tools → ParseLess if you'd rather not expose it.
 
 = 0.4.0 =
 * New: optional request logging to a custom database table — see who's fetching what, with logging off by default until you turn it on.

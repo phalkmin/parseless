@@ -141,6 +141,80 @@ class MD4AI_Stats {
 	}
 
 	/**
+	 * Returns chart-ready bot activity over time.
+	 *
+	 * Buckets hits by day for the top N bots across the window. Days with no
+	 * traffic for a bot are filled with zero so every series aligns to the
+	 * same date axis.
+	 *
+	 * @param int $days Window length.
+	 * @param int $top  Number of bots to chart.
+	 * @return array{labels: array<int,string>, datasets: array<int, array{label:string, data:array<int,int>}>}
+	 */
+	public static function daily_bot_hits( int $days, int $top = 5 ): array {
+		global $wpdb;
+		$days  = max( 1, $days );
+		$table = MD4AI_Logger::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT DATE(created_at) AS d, bot_name, COUNT(*) AS hits
+				 FROM %i
+				 WHERE bot_name <> '' AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)
+				 GROUP BY d, bot_name
+				 ORDER BY d ASC",
+				$table,
+				$days
+			),
+			ARRAY_A
+		);
+		if ( ! is_array( $rows ) || empty( $rows ) ) {
+			return array(
+				'labels'   => array(),
+				'datasets' => array(),
+			);
+		}
+
+		// Build the date axis: every day in the window, oldest first.
+		$labels = array();
+		$cursor = strtotime( '-' . ( $days - 1 ) . ' days', strtotime( gmdate( 'Y-m-d' ) ) );
+		for ( $i = 0; $i < $days; $i++ ) {
+			$labels[] = gmdate( 'Y-m-d', $cursor );
+			$cursor   = strtotime( '+1 day', $cursor );
+		}
+
+		// Tally per bot and per (bot,day).
+		$totals = array();
+		$by_day = array();
+		foreach ( $rows as $row ) {
+			$bot                    = (string) $row['bot_name'];
+			$day                    = (string) $row['d'];
+			$hits                   = (int) $row['hits'];
+			$totals[ $bot ]         = ( $totals[ $bot ] ?? 0 ) + $hits;
+			$by_day[ $bot ][ $day ] = $hits;
+		}
+		arsort( $totals );
+		$top_bots = array_slice( array_keys( $totals ), 0, max( 1, $top ) );
+
+		$datasets = array();
+		foreach ( $top_bots as $bot ) {
+			$data = array();
+			foreach ( $labels as $label ) {
+				$data[] = (int) ( $by_day[ $bot ][ $label ] ?? 0 );
+			}
+			$datasets[] = array(
+				'label' => $bot,
+				'data'  => $data,
+			);
+		}
+
+		return array(
+			'labels'   => $labels,
+			'datasets' => $datasets,
+		);
+	}
+
+	/**
 	 * Returns raw rows for CSV export over the window.
 	 *
 	 * @param int $days Window length.

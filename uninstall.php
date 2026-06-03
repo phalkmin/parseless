@@ -11,7 +11,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 
 global $wpdb;
 
-// Delete all plugin transients (md4ai_md_{post_id} and md4ai_llms_txt).
+// Delete all plugin transients (md4ai_md_{post_id}, md4ai_llms_txt, md4ai_sitemap).
 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 $wpdb->query(
 	"DELETE FROM {$wpdb->options}

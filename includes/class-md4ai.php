@@ -202,6 +202,7 @@ class MD4AI {
 	 */
 	public static function on_save_post( int $post_id ): void {
 		MD4AI_Cache::delete( $post_id );
+		MD4AI_Sitemap::clear_cache();
 	}
 
 	/**
