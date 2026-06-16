@@ -16,13 +16,16 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.2"
+      - name: Install PHPCS + WPCS
+        run: |
+          composer global require \
+            squizlabs/php_codesniffer \
+            wp-coding-standards/wpcs:"^3" \
+            dealerdirect/phpcodesniffer-composer-installer \
+            --no-progress
+          echo "$HOME/.composer/vendor/bin" >> "$GITHUB_PATH"
       - name: WPCS check
-        uses: 10up/wpcs-action@stable
-        with:
-          excludes: "vendor"
-          extra_args: "--report-json=./phpcs.json"
-          standard: "WordPress-Extra"
-          use_local_config: "true"
+        run: phpcs --standard=WordPress-Extra --ignore=vendor --report-json=./phpcs.json .
       - name: Update summary
         run: |
           npm i -g github:10up/phpcs-json-to-md
