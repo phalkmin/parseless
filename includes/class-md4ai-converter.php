@@ -92,28 +92,25 @@ class MD4AI_Converter {
 
 		switch ( $tag ) {
 			case 'h1':
-				return "\n\n# " . trim( self::children_to_md( $node, $ctx ) ) . "\n\n";
 			case 'h2':
-				return "\n\n## " . trim( self::children_to_md( $node, $ctx ) ) . "\n\n";
 			case 'h3':
-				return "\n\n### " . trim( self::children_to_md( $node, $ctx ) ) . "\n\n";
 			case 'h4':
-				return "\n\n#### " . trim( self::children_to_md( $node, $ctx ) ) . "\n\n";
 			case 'h5':
-				return "\n\n##### " . trim( self::children_to_md( $node, $ctx ) ) . "\n\n";
 			case 'h6':
-				return "\n\n###### " . trim( self::children_to_md( $node, $ctx ) ) . "\n\n";
+				$level = (int) substr( $tag, 1 );
+				$text  = self::single_line( self::children_to_md( $node, $ctx ) );
+				return "\n\n" . str_repeat( '#', $level ) . ' ' . $text . "\n\n";
 
 			case 'p':
 				return trim( self::children_to_md( $node, $ctx ) ) . "\n\n";
 
 			case 'strong':
 			case 'b':
-				return '**' . self::children_to_md( $node, $ctx ) . '**';
+				return self::wrap_inline( '**', self::children_to_md( $node, $ctx ) );
 
 			case 'em':
 			case 'i':
-				return '*' . self::children_to_md( $node, $ctx ) . '*';
+				return self::wrap_inline( '*', self::children_to_md( $node, $ctx ) );
 
 			case 'code':
 				$code_ctx = array_merge( $ctx, array( 'in_code' => true ) );
@@ -121,6 +118,10 @@ class MD4AI_Converter {
 				// Inside <pre>, the parent handles fencing; just return raw text.
 				if ( ! empty( $ctx['in_pre'] ) ) {
 					return $code;
+				}
+				// A backtick inside the code span needs a wider delimiter.
+				if ( false !== strpos( $code, '`' ) ) {
+					return '`` ' . $code . ' ``';
 				}
 				return '`' . $code . '`';
 
@@ -228,7 +229,12 @@ class MD4AI_Converter {
 				$item_text .= self::node_to_md( $li_child, $item_ctx );
 			}
 
-			$out .= $indent . '- ' . trim( $item_text ) . "\n";
+			$item_text = trim( $item_text );
+			// Continuation lines must be indented to stay inside the list item.
+			$item_text = preg_replace( "/\n{2,}/", "\n", $item_text );
+			$item_text = str_replace( "\n", "\n" . $indent . '  ', (string) $item_text );
+
+			$out .= $indent . '- ' . $item_text . "\n";
 			if ( '' !== $nested_lists ) {
 				$out .= $nested_lists;
 			}
@@ -268,7 +274,7 @@ class MD4AI_Converter {
 					$is_header = true;
 				}
 				if ( 'th' === $cell_tag || 'td' === $cell_tag ) {
-					$cells[] = trim( self::children_to_md( $cell, $ctx ) );
+					$cells[] = self::table_cell( self::children_to_md( $cell, $ctx ) );
 				}
 			}
 
@@ -303,6 +309,45 @@ class MD4AI_Converter {
 		}
 
 		return $md . "\n";
+	}
+
+	/**
+	 * Collapses content to a single trimmed line (headings, table cells).
+	 *
+	 * @param string $text Markdown fragment.
+	 * @return string
+	 */
+	private static function single_line( string $text ): string {
+		return trim( (string) preg_replace( '/\s*\n\s*/', ' ', $text ) );
+	}
+
+	/**
+	 * Wraps inline content in emphasis markers, hoisting edge whitespace
+	 * outside the markers so the Markdown stays valid (`** text **` is not
+	 * parsed as bold).
+	 *
+	 * @param string $marker Emphasis marker (`**` or `*`).
+	 * @param string $inner  Inner Markdown content.
+	 * @return string
+	 */
+	private static function wrap_inline( string $marker, string $inner ): string {
+		$trimmed = trim( $inner );
+		if ( '' === $trimmed ) {
+			return $inner;
+		}
+		$lead  = ltrim( $inner ) !== $inner ? ' ' : '';
+		$trail = rtrim( $inner ) !== $inner ? ' ' : '';
+		return $lead . $marker . $trimmed . $marker . $trail;
+	}
+
+	/**
+	 * Sanitizes a table cell: newlines and pipes inside a cell break the row.
+	 *
+	 * @param string $text Cell Markdown content.
+	 * @return string
+	 */
+	private static function table_cell( string $text ): string {
+		return str_replace( '|', '\\|', self::single_line( $text ) );
 	}
 
 	/**

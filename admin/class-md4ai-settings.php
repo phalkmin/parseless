@@ -78,6 +78,7 @@ class MD4AI_Settings {
 			'llmstxt_max_posts'   => $llmstxt_max_posts,
 			'sitemap_enabled'     => isset( $_POST['sitemap_enabled'] ),
 			'include_frontmatter' => isset( $_POST['include_frontmatter'] ),
+			'include_schema'      => isset( $_POST['include_schema'] ),
 			'enable_logging'      => isset( $_POST['enable_logging'] ),
 			'log_retention_days'  => in_array( $retention_days, array( 7, 30, 90, 365 ), true )
 				? $retention_days
@@ -221,8 +222,11 @@ class MD4AI_Settings {
 					<td>
 						<label>
 							<input type="checkbox" name="llmstxt_enabled" value="1" <?php checked( (bool) $s['llmstxt_enabled'] ); ?>>
-							<?php esc_html_e( 'Enable /llms.txt endpoint', 'parseless' ); ?>
+							<?php esc_html_e( 'Enable the /llms.txt and /llms-full.txt endpoints', 'parseless' ); ?>
 						</label>
+						<p class="description">
+							<?php esc_html_e( 'llms.txt is an index of your posts; llms-full.txt concatenates their full Markdown content (capped at 500KB).', 'parseless' ); ?>
+						</p>
 					</td>
 				</tr>
 				<tr>
@@ -251,6 +255,16 @@ class MD4AI_Settings {
 							<input type="checkbox" name="include_frontmatter" value="1" <?php checked( (bool) $s['include_frontmatter'] ); ?>>
 							<?php esc_html_e( 'Add YAML frontmatter at the top of every Markdown output', 'parseless' ); ?>
 						</label>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><?php esc_html_e( 'Include Schema.org Block', 'parseless' ); ?></th>
+					<td>
+						<label>
+							<input type="checkbox" name="include_schema" value="1" <?php checked( (bool) $s['include_schema'] ); ?>>
+							<?php esc_html_e( 'Append a schema.org Article JSON block to every Markdown output', 'parseless' ); ?>
+						</label>
+						<p class="description"><?php esc_html_e( 'Gives AI systems structured metadata (title, author, dates, featured image) derived from the post itself.', 'parseless' ); ?></p>
 					</td>
 				</tr>
 				<tr>

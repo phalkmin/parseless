@@ -72,7 +72,8 @@ class MD4AI {
 
 		header( 'Content-Type: text/markdown; charset=utf-8' );
 		header( 'X-Robots-Tag: noindex' );
-		echo esc_html( $markdown );
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- plain-text Markdown response, not HTML; entity-encoding would corrupt the output.
+		echo $markdown;
 		exit;
 	}
 
@@ -118,13 +119,7 @@ class MD4AI {
 		if ( '' === $ua ) {
 			return '';
 		}
-		$saved_list = md4ai_get_setting( 'bot_list' );
-		if ( is_string( $saved_list ) && '' !== trim( $saved_list ) ) {
-			$bots = array_filter( array_map( 'trim', explode( "\n", $saved_list ) ) );
-		} else {
-			$bots = apply_filters( 'md4ai_bot_list', array() );
-		}
-		foreach ( $bots as $bot ) {
+		foreach ( MD4AI_Detector::get_bot_list() as $bot ) {
 			if ( false !== stripos( $ua, (string) $bot ) ) {
 				return (string) $bot;
 			}
@@ -192,7 +187,49 @@ class MD4AI {
 		}
 
 		$md .= $body;
+
+		if ( md4ai_get_setting( 'include_schema' ) ) {
+			$md .= "\n\n" . self::schema_block( $post, $title, $url, $author, $date );
+		}
+
 		return apply_filters( 'md4ai_markdown_output', $md, $post );
+	}
+
+	/**
+	 * Builds a schema.org Article JSON-LD block from data we already have.
+	 *
+	 * @param WP_Post $post   Post object.
+	 * @param string  $title  Post title.
+	 * @param string  $url    Permalink.
+	 * @param string  $author Author display name.
+	 * @param string  $date   Publish date (ISO 8601).
+	 * @return string
+	 */
+	private static function schema_block( WP_Post $post, string $title, string $url, string $author, string $date ): string {
+		$schema = array(
+			'@context'      => 'https://schema.org',
+			'@type'         => 'Article',
+			'headline'      => $title,
+			'url'           => $url,
+			'datePublished' => $date,
+			'dateModified'  => get_the_modified_date( 'c', $post ),
+			'author'        => array(
+				'@type' => 'Person',
+				'name'  => $author,
+			),
+			'publisher'     => array(
+				'@type' => 'Organization',
+				'name'  => get_bloginfo( 'name' ),
+				'url'   => home_url( '/' ),
+			),
+		);
+
+		$image = get_the_post_thumbnail_url( $post, 'full' );
+		if ( $image ) {
+			$schema['image'] = $image;
+		}
+
+		return "```json\n" . wp_json_encode( $schema, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) . "\n```\n";
 	}
 
 	/**
@@ -203,6 +240,7 @@ class MD4AI {
 	public static function on_save_post( int $post_id ): void {
 		MD4AI_Cache::delete( $post_id );
 		MD4AI_Sitemap::clear_cache();
+		MD4AI_LLMsTxt::clear_cache();
 	}
 
 	/**

@@ -77,12 +77,25 @@ class MD4AI_Detector {
 			return false;
 		}
 
-		// Read bot list from settings if non-empty, otherwise use defaults.
+		foreach ( self::get_bot_list() as $bot ) {
+			if ( false !== stripos( $ua, $bot ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Returns the effective bot UA substring list: saved setting if non-empty,
+	 * otherwise the defaults, with the md4ai_bot_list filter applied.
+	 *
+	 * @return string[]
+	 */
+	public static function get_bot_list(): array {
 		$saved_list = md4ai_get_setting( 'bot_list' );
 		if ( is_string( $saved_list ) && '' !== trim( $saved_list ) ) {
-			$lines = explode( "\n", $saved_list );
-			$bots  = array_filter(
-				array_map( 'trim', $lines ),
+			$bots = array_filter(
+				array_map( 'trim', explode( "\n", $saved_list ) ),
 				static function ( $line ) {
 					return '' !== $line;
 				}
@@ -91,15 +104,7 @@ class MD4AI_Detector {
 			$bots = self::$default_bot_list;
 		}
 
-		// Apply filter to allow customization.
-		$bots = apply_filters( 'md4ai_bot_list', $bots );
-
-		foreach ( $bots as $bot ) {
-			if ( false !== stripos( $ua, $bot ) ) {
-				return true;
-			}
-		}
-		return false;
+		return array_values( apply_filters( 'md4ai_bot_list', $bots ) );
 	}
 
 	/**

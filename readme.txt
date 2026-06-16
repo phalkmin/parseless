@@ -4,7 +4,7 @@ Tags: ai, markdown, llms, bots, crawlers
 Requires at least: 6.8
 Tested up to: 7.0
 Requires PHP: 8.2
-Stable tag: 0.5.0
+Stable tag: 0.6.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -122,6 +122,15 @@ Logs are pruned daily according to the configured retention window
 "Delete all logged requests" at any time from Tools → ParseLess.
 
 == Changelog ==
+
+= 0.6.0 =
+* New: /llms-full.txt endpoint — the full Markdown content of your latest posts in a single document (capped at 500KB), perfect for AI systems that want everything in one fetch. Shares the llms.txt toggle.
+* New: optional schema.org Article block appended to Markdown output — structured metadata (title, author, dates, featured image) for AI systems. Off by default, enable under Tools → ParseLess.
+* Fixed: Markdown and llms.txt responses were HTML-entity-encoded (ampersands, angle brackets and quotes showed up as &amp;amp;-style codes). Output is now clean plain text.
+* Fixed: bold/italic text with surrounding spaces, table cells containing pipes or paragraphs, multi-line headings, and inline code containing backticks all produced broken Markdown. All render correctly now.
+* Fixed: posts marked noindex or password-protected no longer appear in llms.txt (matching the Markdown endpoint and sitemap).
+* Fixed: bot names were logged as blank in analytics when using the built-in bot list.
+* Improved: llms.txt and llms-full.txt caches are now refreshed when you publish or update a post.
 
 = 0.5.0 =
 * New: bot activity chart on the Analytics tab — see how each AI crawler's traffic trends across the last 30 days at a glance.

@@ -3,7 +3,7 @@
  * Plugin Name:       ParseLess
  * Plugin URI:        https://github.com/phalkmin/parseless
  * Description:       Serves WordPress content as Markdown to AI crawlers and on ?format=md requests. Also exposes /llms.txt.
- * Version:           0.5.0
+ * Version:           0.6.0
  * Requires at least: 6.8
  * Requires PHP:      8.2
  * Author:            Paulo Halkmin
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MD4AI_VERSION', '0.5.0' );
+define( 'MD4AI_VERSION', '0.6.0' );
 define( 'MD4AI_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MD4AI_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
