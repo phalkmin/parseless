@@ -4,7 +4,7 @@ Tags: ai, markdown, llms, bots, crawlers
 Requires at least: 6.8
 Tested up to: 7.0
 Requires PHP: 8.2
-Stable tag: 0.6.0
+Stable tag: 0.7.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -122,6 +122,13 @@ Logs are pruned daily according to the configured retention window
 "Delete all logged requests" at any time from Tools → ParseLess.
 
 == Changelog ==
+
+= 0.7.0 =
+* New: Open Knowledge Format (OKF) bundle. Enable it under Tools → ParseLess to serve your content as Google's OKF v0.1 bundle for AI agents at /okf/ — an index, a changelog at /okf/log.md, and one cross-linked Markdown file per post (also reachable via ?format=okf). Internal links between your posts are rewritten so agents can follow them within the bundle. The /okf/ path is configurable in case it clashes with an existing page. Off by default; experimental, as few agents crawl OKF bundles yet.
+* New: "Top fetched URLs" table on the Analytics tab, covering endpoint fetches (llms.txt, sitemap, OKF) that carry no post ID.
+* New: block specific AI crawlers from your Markdown. Add User-Agent substrings to the new "Blocked Bots" list under Tools → ParseLess and matching crawlers get a 403 instead of your content. Empty by default, and it never affects normal HTML browsing.
+* Fixed: script and style tags in post content no longer leak their raw code into the Markdown, llms.txt, and OKF output — only real content is served.
+* Security: the analytics CSV export now neutralises spreadsheet formula injection, so a crafted User-Agent or URL can't run as a formula when the export is opened in Excel or Google Sheets.
 
 = 0.6.0 =
 * New: /llms-full.txt endpoint — the full Markdown content of your latest posts in a single document (capped at 500KB), perfect for AI systems that want everything in one fetch. Shares the llms.txt toggle.

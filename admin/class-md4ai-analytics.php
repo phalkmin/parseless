@@ -64,6 +64,7 @@ class MD4AI_Analytics {
 		self::render_bot_chart();
 		self::render_bot_table( MD4AI_Stats::top_bots( 30, 50 ) );
 		self::render_post_table( MD4AI_Stats::top_posts( 30, 50 ) );
+		self::render_url_table( MD4AI_Stats::top_urls( 30, 50 ) );
 		self::render_unknown_ua_table( MD4AI_Stats::unknown_uas( 30, 50 ) );
 		self::render_export_form();
 	}
@@ -135,6 +136,33 @@ class MD4AI_Analytics {
 			} else {
 				echo '<td>' . esc_html( $title ) . '</td>';
 			}
+			echo '<td>' . (int) $row['hits'] . '</td>';
+			echo '<td>' . esc_html( $row['last_seen'] ) . '</td>';
+			echo '</tr>';
+		}
+		echo '</tbody></table>';
+	}
+
+	/**
+	 * Renders the top-fetched-URLs table, including endpoint fetches
+	 * (llms.txt, sitemap, OKF bundle files) that carry no post ID.
+	 *
+	 * @param array<int, array{url:string,hits:int,last_seen:string}> $rows Aggregated URL rows.
+	 */
+	private static function render_url_table( array $rows ): void {
+		echo '<h2>' . esc_html__( 'Top fetched URLs (30 days)', 'parseless' ) . '</h2>';
+		if ( empty( $rows ) ) {
+			echo '<p>' . esc_html__( 'No URL fetches recorded yet.', 'parseless' ) . '</p>';
+			return;
+		}
+		echo '<table class="widefat striped"><thead><tr>';
+		echo '<th>' . esc_html__( 'URL', 'parseless' ) . '</th>';
+		echo '<th>' . esc_html__( 'Fetches', 'parseless' ) . '</th>';
+		echo '<th>' . esc_html__( 'Last seen', 'parseless' ) . '</th>';
+		echo '</tr></thead><tbody>';
+		foreach ( $rows as $row ) {
+			echo '<tr>';
+			echo '<td><a href="' . esc_url( $row['url'] ) . '" target="_blank" rel="noopener"><code>' . esc_html( $row['url'] ) . '</code></a></td>';
 			echo '<td>' . (int) $row['hits'] . '</td>';
 			echo '<td>' . esc_html( $row['last_seen'] ) . '</td>';
 			echo '</tr>';
@@ -348,6 +376,22 @@ class MD4AI_Analytics {
 	}
 
 	/**
+	 * Neutralises CSV formula injection: spreadsheet apps execute a cell whose
+	 * first character is one of = + - @ (or a leading tab/CR), and the logged
+	 * URL and User-Agent are attacker-controlled. Prefixing with a single quote
+	 * forces the cell to be read as text.
+	 *
+	 * @param string $value Raw cell value.
+	 * @return string
+	 */
+	private static function csv_safe( string $value ): string {
+		if ( '' !== $value && false !== strpos( "=+-@\t\r", $value[0] ) ) {
+			return "'" . $value;
+		}
+		return $value;
+	}
+
+	/**
 	 * Streams logged requests as CSV to the browser.
 	 */
 	public static function export_csv(): void {
@@ -368,19 +412,22 @@ class MD4AI_Analytics {
 		header( 'Content-Disposition: attachment; filename="parseless-requests-' . gmdate( 'Y-m-d' ) . '.csv"' );
 
 		$out = fopen( 'php://output', 'w' );
-		fputcsv( $out, array( 'created_at', 'post_id', 'url', 'user_agent', 'bot_name', 'bytes_served', 'cache_hit' ) );
+		fputcsv( $out, array( 'created_at', 'post_id', 'url', 'user_agent', 'bot_name', 'bytes_served', 'cache_hit' ), ',', '"', '' );
 		foreach ( $rows as $row ) {
 			fputcsv(
 				$out,
 				array(
-					$row['created_at'],
-					$row['post_id'],
-					$row['url'],
-					$row['user_agent'],
-					$row['bot_name'],
-					$row['bytes_served'],
-					$row['cache_hit'],
-				)
+					self::csv_safe( (string) $row['created_at'] ),
+					(int) $row['post_id'],
+					self::csv_safe( (string) $row['url'] ),
+					self::csv_safe( (string) $row['user_agent'] ),
+					self::csv_safe( (string) $row['bot_name'] ),
+					(int) $row['bytes_served'],
+					(int) $row['cache_hit'],
+				),
+				',',
+				'"',
+				''
 			);
 		}
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closing the php://output stream, not a filesystem resource.

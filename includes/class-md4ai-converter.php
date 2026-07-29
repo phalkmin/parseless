@@ -160,6 +160,16 @@ class MD4AI_Converter {
 			case 'table':
 				return self::table_to_md( $node, $ctx );
 
+			// Non-content elements: drop entirely so their source text never
+			// leaks into the Markdown body.
+			case 'script':
+			case 'style':
+			case 'noscript':
+			case 'template':
+			case 'svg':
+			case 'iframe':
+				return '';
+
 			// Pass-through: render children without adding markup.
 			default:
 				return self::children_to_md( $node, $ctx );

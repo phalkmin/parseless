@@ -108,6 +108,52 @@ class MD4AI_Detector {
 	}
 
 	/**
+	 * Returns the configured blocked-bot UA substring list. Unlike the bot
+	 * list, this has no built-in defaults: an empty list blocks nothing.
+	 *
+	 * @return string[]
+	 */
+	public static function get_blocked_bot_list(): array {
+		$saved = md4ai_get_setting( 'blocked_bots' );
+		if ( ! is_string( $saved ) || '' === trim( $saved ) ) {
+			return array();
+		}
+		$bots = array_filter(
+			array_map( 'trim', explode( "\n", $saved ) ),
+			static function ( $line ) {
+				return '' !== $line;
+			}
+		);
+
+		return array_values( apply_filters( 'md4ai_blocked_bots', $bots ) );
+	}
+
+	/**
+	 * Determines whether the current request's User-Agent is on the blocked list.
+	 *
+	 * @return bool
+	 */
+	public static function is_blocked_request(): bool {
+		$blocked = self::get_blocked_bot_list();
+		if ( empty( $blocked ) ) {
+			return false;
+		}
+
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- UA used only for string matching, never in output
+		$ua = wp_unslash( $_SERVER['HTTP_USER_AGENT'] ?? '' );
+		if ( '' === $ua ) {
+			return false;
+		}
+
+		foreach ( $blocked as $bot ) {
+			if ( false !== stripos( $ua, (string) $bot ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * Returns the matched heuristic token if the UA looks bot-like but is not on the configured list.
 	 *
 	 * @return string Empty string if no heuristic match.

@@ -21,6 +21,7 @@ class MD4AI {
 		add_action( 'template_redirect', array( __CLASS__, 'maybe_serve_markdown' ), 1 );
 		add_action( 'save_post', array( __CLASS__, 'on_save_post' ) );
 		add_action( 'init', array( __CLASS__, 'maybe_serve_llms_txt' ) );
+		add_action( 'init', array( 'MD4AI_OKF', 'maybe_serve' ) );
 	}
 
 	/**
@@ -49,6 +50,15 @@ class MD4AI {
 		$post = get_post( $post_id );
 		if ( ! $post || ! MD4AI_Detector::is_post_servable( $post ) ) {
 			return;
+		}
+
+		// Block configured bots from the Markdown endpoint with a 403.
+		if ( MD4AI_Detector::is_blocked_request() ) {
+			status_header( 403 );
+			header( 'Content-Type: text/plain; charset=utf-8' );
+			header( 'X-Robots-Tag: noindex' );
+			echo "403 Forbidden\n";
+			exit;
 		}
 
 		$cache_hit = true;
@@ -241,6 +251,8 @@ class MD4AI {
 		MD4AI_Cache::delete( $post_id );
 		MD4AI_Sitemap::clear_cache();
 		MD4AI_LLMsTxt::clear_cache();
+		MD4AI_OKF::clear_cache();
+		MD4AI_OKF::clear_post( $post_id );
 	}
 
 	/**

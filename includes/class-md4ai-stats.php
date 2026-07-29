@@ -113,6 +113,38 @@ class MD4AI_Stats {
 	}
 
 	/**
+	 * Returns the top N fetched URLs over the window.
+	 *
+	 * Unlike {@see self::top_posts()}, this groups by the raw URL, so endpoint
+	 * fetches that carry no post ID (llms.txt, the sitemap, OKF bundle files)
+	 * are included.
+	 *
+	 * @param int $days  Window length.
+	 * @param int $limit Number of rows to return.
+	 * @return array<int, array{url:string, hits:int, last_seen:string}>
+	 */
+	public static function top_urls( int $days, int $limit = 20 ): array {
+		global $wpdb;
+		$table = MD4AI_Logger::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT url, COUNT(*) AS hits, MAX(created_at) AS last_seen
+				 FROM %i
+				 WHERE url <> '' AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)
+				 GROUP BY url
+				 ORDER BY hits DESC
+				 LIMIT %d",
+				$table,
+				max( 1, $days ),
+				max( 1, $limit )
+			),
+			ARRAY_A
+		);
+		return is_array( $rows ) ? $rows : array();
+	}
+
+	/**
 	 * Returns recent unknown UA hits.
 	 *
 	 * @param int $days  Window length.

@@ -65,6 +65,7 @@ class MD4AI_Settings {
 				: $defaults['detection_mode'],
 			'query_param_name'    => $query_param_name,
 			'bot_list'            => sanitize_textarea_field( wp_unslash( $_POST['bot_list'] ?? '' ) ),
+			'blocked_bots'        => sanitize_textarea_field( wp_unslash( $_POST['blocked_bots'] ?? '' ) ),
 			'cache_ttl'           => in_array( $cache_ttl, array( HOUR_IN_SECONDS, 6 * HOUR_IN_SECONDS, DAY_IN_SECONDS, WEEK_IN_SECONDS ), true )
 					? $cache_ttl
 					: $defaults['cache_ttl'],
@@ -77,6 +78,9 @@ class MD4AI_Settings {
 			'llmstxt_enabled'     => isset( $_POST['llmstxt_enabled'] ),
 			'llmstxt_max_posts'   => $llmstxt_max_posts,
 			'sitemap_enabled'     => isset( $_POST['sitemap_enabled'] ),
+			'okf_enabled'         => isset( $_POST['okf_enabled'] ),
+			'okf_endpoint'        => isset( $_POST['okf_endpoint'] ) ? sanitize_title( wp_unslash( $_POST['okf_endpoint'] ) ) : $defaults['okf_endpoint'],
+			'okf_max_posts'       => isset( $_POST['okf_max_posts'] ) ? absint( wp_unslash( $_POST['okf_max_posts'] ) ) : $defaults['okf_max_posts'],
 			'include_frontmatter' => isset( $_POST['include_frontmatter'] ),
 			'include_schema'      => isset( $_POST['include_schema'] ),
 			'enable_logging'      => isset( $_POST['enable_logging'] ),
@@ -89,8 +93,17 @@ class MD4AI_Settings {
 		if ( '' === $settings['query_param_name'] ) {
 			$settings['query_param_name'] = $defaults['query_param_name'];
 		}
+		if ( '' === $settings['okf_endpoint'] ) {
+			$settings['okf_endpoint'] = $defaults['okf_endpoint'];
+		}
 
 		update_option( 'md4ai_settings', $settings );
+
+		// The OKF bundle URL is embedded in cached llms.txt and index/log
+		// documents, so refresh them in case the endpoint changed.
+		MD4AI_LLMsTxt::clear_cache();
+		MD4AI_OKF::clear_cache();
+
 		add_settings_error( 'md4ai', 'md4ai_saved', __( 'Settings saved.', 'parseless' ), 'updated' );
 	}
 
@@ -192,6 +205,13 @@ class MD4AI_Settings {
 					</td>
 				</tr>
 				<tr>
+					<th scope="row"><label for="md4ai_blocked_bots"><?php esc_html_e( 'Blocked Bots', 'parseless' ); ?></label></th>
+					<td>
+						<textarea id="md4ai_blocked_bots" name="blocked_bots" rows="5" class="large-text code"><?php echo esc_textarea( $s['blocked_bots'] ); ?></textarea>
+						<p class="description"><?php esc_html_e( 'One User-Agent substring per line. Matching crawlers get a 403 instead of Markdown. Empty by default — blocks nothing. Does not affect normal HTML browsing.', 'parseless' ); ?></p>
+					</td>
+				</tr>
+				<tr>
 					<th scope="row"><label for="md4ai_cache_ttl"><?php esc_html_e( 'Cache TTL', 'parseless' ); ?></label></th>
 					<td>
 						<select id="md4ai_cache_ttl" name="cache_ttl">
@@ -246,6 +266,32 @@ class MD4AI_Settings {
 						<p class="description">
 							<?php esc_html_e( 'Lists the Markdown version of every public post for AI crawlers.', 'parseless' ); ?>
 						</p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><?php esc_html_e( 'OKF bundle', 'parseless' ); ?></th>
+					<td>
+						<label>
+							<input type="checkbox" name="okf_enabled" value="1" <?php checked( (bool) $s['okf_enabled'] ); ?>>
+							<?php
+							printf(
+								/* translators: %s: the bundle URL, e.g. https://example.com/okf/ */
+								esc_html__( 'Serve an Open Knowledge Format (OKF) bundle at %s', 'parseless' ),
+								'<code>' . esc_html( MD4AI_OKF::bundle_url() ) . '</code>'
+							);
+							?>
+						</label>
+						<p class="description">
+							<?php esc_html_e( 'Exposes your content as a Google OKF v0.1 bundle for AI agents: an index, a changelog, and one cross-linked Markdown file per post (also reachable via ?format=okf). Experimental — few agents crawl OKF bundles yet.', 'parseless' ); ?>
+						</p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="md4ai_okf_endpoint"><?php esc_html_e( 'OKF Endpoint', 'parseless' ); ?></label></th>
+					<td>
+						<input type="text" id="md4ai_okf_endpoint" name="okf_endpoint"
+							value="<?php echo esc_attr( (string) $s['okf_endpoint'] ); ?>" class="regular-text">
+						<p class="description"><?php esc_html_e( 'The URL path the bundle is served under. Default is "okf" (so /okf/). Change it if it clashes with an existing page or post.', 'parseless' ); ?></p>
 					</td>
 				</tr>
 				<tr>

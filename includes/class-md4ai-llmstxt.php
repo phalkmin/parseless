@@ -64,7 +64,13 @@ class MD4AI_LLMsTxt {
 	private static function build(): string {
 		$site = get_bloginfo( 'name' );
 		$desc = get_bloginfo( 'description' );
-		$out  = "# {$site}\n\n> {$desc}\n\n## Posts\n\n";
+		$out  = "# {$site}\n\n> {$desc}\n\n";
+
+		if ( md4ai_get_setting( 'okf_enabled' ) ) {
+			$out .= "## Optional\n\n- [OKF bundle](" . MD4AI_OKF::bundle_url() . "): Open Knowledge Format v0.1 bundle of this site's content for AI agents.\n\n";
+		}
+
+		$out .= "## Posts\n\n";
 
 		foreach ( self::get_listed_posts() as $post ) {
 			$excerpt = $post->post_excerpt ? $post->post_excerpt : $post->post_content;
