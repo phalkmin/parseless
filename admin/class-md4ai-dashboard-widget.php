@@ -51,10 +51,10 @@ class MD4AI_Dashboard_Widget {
 			return;
 		}
 
-		$bots  = MD4AI_Stats::top_bots( 7, 5 );
-		$posts = MD4AI_Stats::top_posts( 7, 5 );
-		$total = MD4AI_Stats::total_requests( 7 );
-		$rate  = MD4AI_Stats::cache_hit_rate( 7 );
+		$bots       = MD4AI_Stats::top_bots( 7, 5 );
+		$posts      = MD4AI_Stats::top_posts( 7, 5 );
+		$total      = MD4AI_Stats::total_requests( 7 );
+		$rate       = MD4AI_Stats::cache_hit_rate( 7 );
 		$rate_label = null === $rate ? '—' : round( $rate * 100 ) . '%';
 
 		echo '<p>' . esc_html(
