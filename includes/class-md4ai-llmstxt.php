@@ -25,12 +25,19 @@ class MD4AI_LLMsTxt {
 			return;
 		}
 
-		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-		$path        = trim( (string) wp_parse_url( $request_uri, PHP_URL_PATH ), '/' );
+		$path = md4ai_request_path();
 
 		if ( 'llms.txt' === $path ) {
 			self::serve( self::TRANSIENT_KEY, self::build( ... ), HOUR_IN_SECONDS );
 		} elseif ( 'llms-full.txt' === $path ) {
+			// Full content, so the Blocked Bots list applies as it does on the
+			// Markdown endpoint; the llms.txt index stays open to everyone.
+			if ( MD4AI_Detector::is_blocked_request() ) {
+				MD4AI_Headers::send_forbidden();
+			}
+			// The block makes this URL vary by User-Agent, so a shared cache
+			// keyed on URL alone must not store it (llms.txt stays cacheable).
+			header( 'Cache-Control: private' );
 			self::serve( self::FULL_TRANSIENT_KEY, self::build_full( ... ), DAY_IN_SECONDS );
 		}
 	}
@@ -62,12 +69,12 @@ class MD4AI_LLMsTxt {
 	 * @return string
 	 */
 	private static function build(): string {
-		$site = get_bloginfo( 'name' );
-		$desc = get_bloginfo( 'description' );
+		$site = md4ai_site_name();
+		$desc = md4ai_site_description();
 		$out  = "# {$site}\n\n> {$desc}\n\n";
 
 		if ( md4ai_get_setting( 'okf_enabled' ) ) {
-			$out .= "## Optional\n\n- [OKF bundle](" . MD4AI_OKF::bundle_url() . "): Open Knowledge Format v0.1 bundle of this site's content for AI agents.\n\n";
+			$out .= "## Optional\n\n- [OKF bundle](" . MD4AI_OKF::bundle_url() . '): Open Knowledge Format v' . MD4AI_OKF::version() . " bundle of this site's content for AI agents.\n\n";
 		}
 
 		$out .= "## Posts\n\n";
@@ -76,9 +83,9 @@ class MD4AI_LLMsTxt {
 			$excerpt = $post->post_excerpt ? $post->post_excerpt : $post->post_content;
 			$out    .= sprintf(
 				"- [%s](%s): %s\n",
-				get_the_title( $post ),
+				md4ai_plain_text( get_the_title( $post ) ),
 				get_permalink( $post ),
-				wp_trim_words( $excerpt, 20 )
+				md4ai_plain_text( wp_trim_words( $excerpt, 20 ) )
 			);
 		}
 
@@ -92,15 +99,17 @@ class MD4AI_LLMsTxt {
 	 * @return string
 	 */
 	private static function build_full(): string {
-		$site      = get_bloginfo( 'name' );
+		$site      = md4ai_site_name();
 		$out       = "# {$site} — full content\n\n";
 		$max_bytes = (int) apply_filters( 'md4ai_llmsfull_max_bytes', 500 * KB_IN_BYTES );
 
 		foreach ( self::get_listed_posts() as $post ) {
+			// Read the shared per-post cache but never write it: this document
+			// has its own transient, and writing here would let a llms-full.txt
+			// build decide what the single-post endpoint serves.
 			$markdown = MD4AI_Cache::get( $post->ID );
 			if ( false === $markdown ) {
 				$markdown = MD4AI::build_markdown_for_preview( $post );
-				MD4AI_Cache::set( $post->ID, $markdown );
 			}
 			$section = $markdown . "\n\n---\n\n";
 			if ( strlen( $out ) + strlen( $section ) > $max_bytes ) {
@@ -118,9 +127,12 @@ class MD4AI_LLMsTxt {
 	 * @return WP_Post[]
 	 */
 	private static function get_listed_posts(): array {
-		$post_types = apply_filters( 'md4ai_supported_post_types', md4ai_supported_post_types() );
-		$max_posts  = (int) apply_filters( 'md4ai_llmstxt_max_posts', md4ai_get_setting( 'llmstxt_max_posts' ) );
-		$posts      = get_posts(
+		$post_types = md4ai_enabled_post_types();
+		if ( empty( $post_types ) ) {
+			return array();
+		}
+		$max_posts = (int) apply_filters( 'md4ai_llmstxt_max_posts', md4ai_get_setting( 'llmstxt_max_posts' ) );
+		$posts     = get_posts(
 			array(
 				'numberposts' => $max_posts,
 				'post_status' => 'publish',

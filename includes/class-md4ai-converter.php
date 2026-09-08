@@ -138,6 +138,21 @@ class MD4AI_Converter {
 
 			case 'img':
 				$src = $node->getAttribute( 'src' );
+				// Lazy-loading plugins park a placeholder in src and the real
+				// URL in a data attribute; a data: URI placeholder without a
+				// recoverable URL is dropped rather than emitted as garbage.
+				if ( '' === $src || 0 === strpos( $src, 'data:' ) ) {
+					foreach ( array( 'data-src', 'data-lazy-src' ) as $lazy_attr ) {
+						$lazy = $node->getAttribute( $lazy_attr );
+						if ( '' !== $lazy ) {
+							$src = $lazy;
+							break;
+						}
+					}
+				}
+				if ( '' === $src || 0 === strpos( $src, 'data:' ) ) {
+					return '';
+				}
 				$alt = $node->getAttribute( 'alt' );
 				return "![{$alt}]({$src})";
 

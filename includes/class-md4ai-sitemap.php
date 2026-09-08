@@ -26,7 +26,6 @@ class MD4AI_Sitemap {
 	 */
 	public static function init(): void {
 		add_action( 'init', array( __CLASS__, 'maybe_serve' ) );
-		add_filter( 'robots_txt', array( __CLASS__, 'robots_txt' ), 10, 2 );
 	}
 
 	/**
@@ -37,9 +36,7 @@ class MD4AI_Sitemap {
 			return;
 		}
 
-		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-		$path        = trim( (string) wp_parse_url( $request_uri, PHP_URL_PATH ), '/' );
-		if ( self::PATH !== $path ) {
+		if ( self::PATH !== md4ai_request_path() ) {
 			return;
 		}
 
@@ -63,10 +60,9 @@ class MD4AI_Sitemap {
 	 * @return string
 	 */
 	private static function build(): string {
-		$post_types = apply_filters( 'md4ai_supported_post_types', md4ai_supported_post_types() );
-		$param_name = (string) md4ai_get_setting( 'query_param_name' );
+		$post_types = md4ai_enabled_post_types();
 		$max_posts  = (int) apply_filters( 'md4ai_sitemap_max_posts', 1000 );
-		$posts      = get_posts(
+		$posts      = empty( $post_types ) ? array() : get_posts(
 			array(
 				// phpcs:ignore WordPress.WP.PostsPerPage.posts_per_page_posts_per_page -- A sitemap needs every public post; bounded and filterable via md4ai_sitemap_max_posts.
 				'numberposts' => $max_posts,
@@ -82,7 +78,10 @@ class MD4AI_Sitemap {
 			if ( ! MD4AI_Detector::is_post_servable( $post ) ) {
 				continue;
 			}
-			$loc     = add_query_arg( $param_name, 'md', get_permalink( $post ) );
+			$loc = MD4AI_Headers::markdown_url_for( $post );
+			if ( '' === $loc ) {
+				continue;
+			}
 			$lastmod = get_post_modified_time( 'c', true, $post );
 
 			$xml .= "\t<url>\n";
@@ -95,23 +94,6 @@ class MD4AI_Sitemap {
 
 		$xml .= '</urlset>' . "\n";
 		return $xml;
-	}
-
-	/**
-	 * Advertises the Markdown endpoints in robots.txt.
-	 *
-	 * @param string $output    The robots.txt content.
-	 * @param bool   $is_public Whether the site is public.
-	 * @return string
-	 */
-	public static function robots_txt( string $output, bool $is_public ): string {
-		if ( ! $is_public || ! md4ai_get_setting( 'sitemap_enabled' ) ) {
-			return $output;
-		}
-		$sitemap_url = home_url( '/' . self::PATH );
-		$output     .= "\n# ParseLess: Markdown versions of content for AI crawlers\n";
-		$output     .= 'Sitemap: ' . esc_url_raw( $sitemap_url ) . "\n";
-		return $output;
 	}
 
 	/**

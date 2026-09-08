@@ -22,6 +22,7 @@ class MD4AI {
 		add_action( 'save_post', array( __CLASS__, 'on_save_post' ) );
 		add_action( 'init', array( __CLASS__, 'maybe_serve_llms_txt' ) );
 		add_action( 'init', array( 'MD4AI_OKF', 'maybe_serve' ) );
+		MD4AI_Headers::init();
 	}
 
 	/**
@@ -34,11 +35,8 @@ class MD4AI {
 			return;
 		}
 
-		$enabled    = md4ai_get_setting( 'enabled_post_types' );
-		$all        = md4ai_supported_post_types();
-		$base_types = ( ! empty( $enabled ) && is_array( $enabled ) ) ? array_intersect( $all, $enabled ) : $all;
-		$post_types = apply_filters( 'md4ai_supported_post_types', array_values( $base_types ) );
-		if ( ! is_singular( $post_types ) ) {
+		$post_types = md4ai_enabled_post_types();
+		if ( empty( $post_types ) || ! is_singular( $post_types ) ) {
 			return;
 		}
 
@@ -54,11 +52,7 @@ class MD4AI {
 
 		// Block configured bots from the Markdown endpoint with a 403.
 		if ( MD4AI_Detector::is_blocked_request() ) {
-			status_header( 403 );
-			header( 'Content-Type: text/plain; charset=utf-8' );
-			header( 'X-Robots-Tag: noindex' );
-			echo "403 Forbidden\n";
-			exit;
+			MD4AI_Headers::send_forbidden();
 		}
 
 		$cache_hit = true;
@@ -72,16 +66,15 @@ class MD4AI {
 		MD4AI_Logger::record(
 			array(
 				'post_id'      => $post_id,
-				'url'          => self::current_url(),
-				'user_agent'   => self::current_ua(),
-				'bot_name'     => self::resolve_bot_name(),
+				'url'          => md4ai_current_url(),
+				'user_agent'   => md4ai_current_ua(),
+				'bot_name'     => MD4AI_Detector::bot_name(),
 				'bytes_served' => strlen( $markdown ),
 				'cache_hit'    => $cache_hit,
 			)
 		);
 
-		header( 'Content-Type: text/markdown; charset=utf-8' );
-		header( 'X-Robots-Tag: noindex' );
+		MD4AI_Headers::send_markdown( $markdown );
 		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- plain-text Markdown response, not HTML; entity-encoding would corrupt the output.
 		echo $markdown;
 		exit;
@@ -104,8 +97,8 @@ class MD4AI {
 		MD4AI_Logger::record(
 			array(
 				'post_id'      => (int) get_queried_object_id(),
-				'url'          => self::current_url(),
-				'user_agent'   => self::current_ua(),
+				'url'          => md4ai_current_url(),
+				'user_agent'   => md4ai_current_ua(),
 				'bot_name'     => 'unknown',
 				'bytes_served' => 0,
 				'cache_hit'    => false,
@@ -114,48 +107,36 @@ class MD4AI {
 	}
 
 	/**
-	 * Resolves the bot identifier for the current request.
+	 * Renders a post's content to Markdown with full post context.
 	 *
-	 * @return string Bot UA substring, "manual", or "" if unknown.
-	 */
-	private static function resolve_bot_name(): string {
-		$param_name = (string) md4ai_get_setting( 'query_param_name' );
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$param = isset( $_GET[ $param_name ] ) ? sanitize_key( wp_unslash( $_GET[ $param_name ] ) ) : '';
-		if ( 'md' === $param ) {
-			return 'manual';
-		}
-		$ua = self::current_ua();
-		if ( '' === $ua ) {
-			return '';
-		}
-		foreach ( MD4AI_Detector::get_bot_list() as $bot ) {
-			if ( false !== stripos( $ua, (string) $bot ) ) {
-				return (string) $bot;
-			}
-		}
-		return '';
-	}
-
-	/**
-	 * Returns the current request URL.
+	 * Page builders (Elementor, Divi, WPBakery) hook `the_content` and render
+	 * from the current document rather than the string passed in, so calling
+	 * the filter outside the loop yields empty output. setup_postdata() gives
+	 * them the document they expect.
 	 *
+	 * @param WP_Post $post Post object.
 	 * @return string
 	 */
-	private static function current_url(): string {
-		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		$path = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : '';
-		return esc_url_raw( home_url( $path ) );
-	}
+	public static function render_body( WP_Post $post ): string {
+		$previous = $GLOBALS['post'] ?? null;
 
-	/**
-	 * Returns the current request User-Agent string.
-	 *
-	 * @return string
-	 */
-	private static function current_ua(): string {
-		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		return (string) wp_unslash( $_SERVER['HTTP_USER_AGENT'] ?? '' );
+		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- deliberately setting the global page builders read from `the_content`; restored below.
+		$GLOBALS['post'] = $post;
+		setup_postdata( $post );
+
+		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- intentionally calling WordPress core filter
+		$html = apply_filters( 'the_content', $post->post_content );
+
+		if ( $previous instanceof WP_Post ) {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- restoring the previous post context, not overriding it.
+			$GLOBALS['post'] = $previous;
+			setup_postdata( $previous );
+		} else {
+			unset( $GLOBALS['post'] );
+			wp_reset_postdata();
+		}
+
+		return MD4AI_Converter::convert( $html );
 	}
 
 	/**
@@ -165,27 +146,25 @@ class MD4AI {
 	 * @return string
 	 */
 	public static function build_markdown_for_preview( WP_Post $post ): string {
-		$title  = get_the_title( $post );
+		$title  = md4ai_plain_text( get_the_title( $post ) );
 		$url    = get_permalink( $post );
 		$date   = get_the_date( 'c', $post );
 		$author = get_the_author_meta( 'display_name', (int) $post->post_author );
-		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- intentionally calling WordPress core filter
-		$html = apply_filters( 'the_content', $post->post_content );
-		$body = MD4AI_Converter::convert( $html );
+		$body   = self::render_body( $post );
 
 		if ( md4ai_get_setting( 'include_frontmatter' ) ) {
-			$tags       = array_map( fn( $t ) => $t->name, wp_get_post_tags( $post->ID ) );
-			$categories = array_map( fn( $t ) => $t->name, wp_get_post_categories( $post->ID, array( 'fields' => 'all' ) ) );
-			$excerpt    = has_excerpt( $post ) ? get_the_excerpt( $post ) : '';
+			$tags       = array_map( fn( $t ) => md4ai_plain_text( $t->name ), wp_get_post_tags( $post->ID ) );
+			$categories = array_map( fn( $t ) => md4ai_plain_text( $t->name ), wp_get_post_categories( $post->ID, array( 'fields' => 'all' ) ) );
+			$excerpt    = has_excerpt( $post ) ? md4ai_plain_text( get_the_excerpt( $post ) ) : '';
 			$md         = "---\n";
-			$md        .= 'title: "' . str_replace( '"', '\\"', $title ) . "\"\n";
+			$md        .= 'title: ' . md4ai_yaml_quote( $title ) . "\n";
 			$md        .= "url: {$url}\n";
-			$md        .= "author: {$author}\n";
+			$md        .= 'author: ' . md4ai_yaml_quote( $author ) . "\n";
 			$md        .= "date: {$date}\n";
-			$md        .= 'categories: [' . implode( ', ', $categories ) . "]\n";
-			$md        .= 'tags: [' . implode( ', ', $tags ) . "]\n";
+			$md        .= 'categories: [' . implode( ', ', array_map( 'md4ai_yaml_quote', $categories ) ) . "]\n";
+			$md        .= 'tags: [' . implode( ', ', array_map( 'md4ai_yaml_quote', $tags ) ) . "]\n";
 			if ( '' !== $excerpt ) {
-				$md .= 'excerpt: "' . str_replace( '"', '\\"', $excerpt ) . "\"\n";
+				$md .= 'excerpt: ' . md4ai_yaml_quote( $excerpt ) . "\n";
 			}
 			$md .= "---\n\n";
 			$md .= "# {$title}\n\n";
@@ -229,7 +208,7 @@ class MD4AI {
 			),
 			'publisher'     => array(
 				'@type' => 'Organization',
-				'name'  => get_bloginfo( 'name' ),
+				'name'  => md4ai_site_name(),
 				'url'   => home_url( '/' ),
 			),
 		);
@@ -245,14 +224,21 @@ class MD4AI {
 	/**
 	 * Clears cached Markdown when a post is saved.
 	 *
+	 * Revisions and autosaves never change what any endpoint serves, and the
+	 * OKF clear below is a full-bundle wipe — without this guard every editor
+	 * heartbeat would trigger it and keep the O(N) slug map perpetually cold.
+	 *
 	 * @param int $post_id Post ID.
 	 */
 	public static function on_save_post( int $post_id ): void {
+		if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
+			return;
+		}
+
 		MD4AI_Cache::delete( $post_id );
 		MD4AI_Sitemap::clear_cache();
 		MD4AI_LLMsTxt::clear_cache();
-		MD4AI_OKF::clear_cache();
-		MD4AI_OKF::clear_post( $post_id );
+		MD4AI_OKF::clear_cache( $post_id );
 	}
 
 	/**

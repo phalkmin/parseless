@@ -48,6 +48,35 @@ class MD4AI_Cache {
 	}
 
 	/**
+	 * Deletes every cached Markdown body.
+	 */
+	public static function purge_all(): void {
+		self::purge_prefix( self::PREFIX );
+	}
+
+	/**
+	 * Deletes every transient whose name starts with a prefix.
+	 *
+	 * Per-post keys are not enumerable via the transients API, hence the
+	 * direct LIKE delete — on persistent object caches the rows aren't in
+	 * wp_options and stale entries simply expire by TTL.
+	 *
+	 * @param string $prefix Transient-name prefix, e.g. "md4ai_md_".
+	 */
+	public static function purge_prefix( string $prefix ): void {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- prefixed transient keys cannot be enumerated via the transients API.
+		$wpdb->query(
+			$wpdb->prepare(
+				"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+				$wpdb->esc_like( '_transient_' . $prefix ) . '%',
+				$wpdb->esc_like( '_transient_timeout_' . $prefix ) . '%'
+			)
+		);
+	}
+
+	/**
 	 * Builds the transient key for a post.
 	 *
 	 * @param int $post_id Post ID.

@@ -58,36 +58,60 @@ class MD4AI_Settings {
 		$enabled_post_types = isset( $_POST['enabled_post_types'] ) ? array_map( 'sanitize_key', wp_unslash( (array) $_POST['enabled_post_types'] ) ) : array();
 		$llmstxt_max_posts  = isset( $_POST['llmstxt_max_posts'] ) ? absint( wp_unslash( $_POST['llmstxt_max_posts'] ) ) : $defaults['llmstxt_max_posts'];
 		$retention_days     = isset( $_POST['log_retention_days'] ) ? absint( wp_unslash( $_POST['log_retention_days'] ) ) : $defaults['log_retention_days'];
+		$signal_values      = array( 'yes', 'no', 'omit' );
+		$signal_search      = isset( $_POST['content_signal_search'] ) ? sanitize_key( wp_unslash( $_POST['content_signal_search'] ) ) : '';
+		$signal_input       = isset( $_POST['content_signal_ai_input'] ) ? sanitize_key( wp_unslash( $_POST['content_signal_ai_input'] ) ) : '';
+		$signal_train       = isset( $_POST['content_signal_ai_train'] ) ? sanitize_key( wp_unslash( $_POST['content_signal_ai_train'] ) ) : '';
+		$rsl_permits        = isset( $_POST['rsl_permits'] ) ? sanitize_text_field( wp_unslash( $_POST['rsl_permits'] ) ) : '';
+		$rsl_payment        = isset( $_POST['rsl_payment_type'] ) ? sanitize_key( wp_unslash( $_POST['rsl_payment_type'] ) ) : '';
+		// RSL 1.0 vocabulary: usage tokens for <permits>, payment types for
+		// <payment>. "none" is our own sentinel that emits <prohibits>.
+		$permit_tokens = array( 'all', 'train-ai', 'ai-use', 'search', 'none' );
+		$payment_types = array( 'free', 'attribution', 'subscription', 'use', 'training' );
 
 		$settings = array(
-			'detection_mode'      => in_array( $detection_mode, array( 'both', 'query_param', 'ua' ), true )
+			'detection_mode'              => in_array( $detection_mode, array( 'both', 'query_param', 'ua' ), true )
 				? $detection_mode
 				: $defaults['detection_mode'],
-			'query_param_name'    => $query_param_name,
-			'bot_list'            => sanitize_textarea_field( wp_unslash( $_POST['bot_list'] ?? '' ) ),
-			'blocked_bots'        => sanitize_textarea_field( wp_unslash( $_POST['blocked_bots'] ?? '' ) ),
-			'cache_ttl'           => in_array( $cache_ttl, array( HOUR_IN_SECONDS, 6 * HOUR_IN_SECONDS, DAY_IN_SECONDS, WEEK_IN_SECONDS ), true )
+			'query_param_name'            => $query_param_name,
+			'bot_list'                    => sanitize_textarea_field( wp_unslash( $_POST['bot_list'] ?? '' ) ),
+			'blocked_bots'                => sanitize_textarea_field( wp_unslash( $_POST['blocked_bots'] ?? '' ) ),
+			'cache_ttl'                   => in_array( $cache_ttl, array( HOUR_IN_SECONDS, 6 * HOUR_IN_SECONDS, DAY_IN_SECONDS, WEEK_IN_SECONDS ), true )
 					? $cache_ttl
 					: $defaults['cache_ttl'],
-			'enabled_post_types'  => array_values(
+			'enabled_post_types'          => array_values(
 				array_intersect(
 					$enabled_post_types,
 					$all_types
 				)
 			),
-			'llmstxt_enabled'     => isset( $_POST['llmstxt_enabled'] ),
-			'llmstxt_max_posts'   => $llmstxt_max_posts,
-			'sitemap_enabled'     => isset( $_POST['sitemap_enabled'] ),
-			'okf_enabled'         => isset( $_POST['okf_enabled'] ),
-			'okf_endpoint'        => isset( $_POST['okf_endpoint'] ) ? sanitize_title( wp_unslash( $_POST['okf_endpoint'] ) ) : $defaults['okf_endpoint'],
-			'okf_max_posts'       => isset( $_POST['okf_max_posts'] ) ? absint( wp_unslash( $_POST['okf_max_posts'] ) ) : $defaults['okf_max_posts'],
-			'include_frontmatter' => isset( $_POST['include_frontmatter'] ),
-			'include_schema'      => isset( $_POST['include_schema'] ),
-			'enable_logging'      => isset( $_POST['enable_logging'] ),
-			'log_retention_days'  => in_array( $retention_days, array( 7, 30, 90, 365 ), true )
+			'llmstxt_enabled'             => isset( $_POST['llmstxt_enabled'] ),
+			// Clamped to the number fields' rendered min/max: an emptied field
+			// submits "", and absint('') = 0 would silently list zero posts.
+			'llmstxt_max_posts'           => max( 1, min( 1000, $llmstxt_max_posts ) ),
+			'sitemap_enabled'             => isset( $_POST['sitemap_enabled'] ),
+			'okf_enabled'                 => isset( $_POST['okf_enabled'] ),
+			'okf_endpoint'                => isset( $_POST['okf_endpoint'] ) ? sanitize_title( wp_unslash( $_POST['okf_endpoint'] ) ) : $defaults['okf_endpoint'],
+			'okf_max_posts'               => isset( $_POST['okf_max_posts'] ) ? max( 1, min( 5000, absint( wp_unslash( $_POST['okf_max_posts'] ) ) ) ) : $defaults['okf_max_posts'],
+			'include_frontmatter'         => isset( $_POST['include_frontmatter'] ),
+			'include_schema'              => isset( $_POST['include_schema'] ),
+			'enable_logging'              => isset( $_POST['enable_logging'] ),
+			'log_retention_days'          => in_array( $retention_days, array( 7, 30, 90, 365 ), true )
 				? $retention_days
 				: $defaults['log_retention_days'],
-			'log_unknown_uas'     => isset( $_POST['log_unknown_uas'] ),
+			'log_unknown_uas'             => isset( $_POST['log_unknown_uas'] ),
+			'accept_negotiation'          => isset( $_POST['accept_negotiation'] ),
+			'md_suffix_enabled'           => isset( $_POST['md_suffix_enabled'] ),
+			'link_header_enabled'         => isset( $_POST['link_header_enabled'] ),
+			'html_link_tag_enabled'       => isset( $_POST['html_link_tag_enabled'] ),
+			'content_signal_search'       => in_array( $signal_search, $signal_values, true ) ? $signal_search : $defaults['content_signal_search'],
+			'content_signal_ai_input'     => in_array( $signal_input, $signal_values, true ) ? $signal_input : $defaults['content_signal_ai_input'],
+			'content_signal_ai_train'     => in_array( $signal_train, $signal_values, true ) ? $signal_train : $defaults['content_signal_ai_train'],
+			'content_signals_boilerplate' => isset( $_POST['content_signals_boilerplate'] ),
+			'robots_ai_rules'             => isset( $_POST['robots_ai_rules'] ),
+			'rsl_enabled'                 => isset( $_POST['rsl_enabled'] ),
+			'rsl_permits'                 => in_array( $rsl_permits, $permit_tokens, true ) ? $rsl_permits : $defaults['rsl_permits'],
+			'rsl_payment_type'            => in_array( $rsl_payment, $payment_types, true ) ? $rsl_payment : $defaults['rsl_payment_type'],
 		);
 
 		if ( '' === $settings['query_param_name'] ) {
@@ -99,10 +123,14 @@ class MD4AI_Settings {
 
 		update_option( 'md4ai_settings', $settings );
 
-		// The OKF bundle URL is embedded in cached llms.txt and index/log
-		// documents, so refresh them in case the endpoint changed.
+		// Cached documents embed setting-dependent output: the OKF bundle URL
+		// in llms.txt, the query param name in sitemap URLs, and the
+		// frontmatter/schema toggles in every per-post Markdown body.
 		MD4AI_LLMsTxt::clear_cache();
 		MD4AI_OKF::clear_cache();
+		MD4AI_RSL::clear_cache();
+		MD4AI_Sitemap::clear_cache();
+		MD4AI_Cache::purge_all();
 
 		add_settings_error( 'md4ai', 'md4ai_saved', __( 'Settings saved.', 'parseless' ), 'updated' );
 	}
@@ -234,7 +262,7 @@ class MD4AI_Settings {
 								<?php echo esc_html( $type ); ?>
 							</label><br>
 						<?php endforeach; ?>
-						<p class="description"><?php esc_html_e( 'Uncheck post types you do not want served as Markdown. All are enabled by default.', 'parseless' ); ?></p>
+						<p class="description"><?php esc_html_e( 'Uncheck post types you do not want served as Markdown. All are enabled by default — clearing every checkbox restores that default rather than disabling serving.', 'parseless' ); ?></p>
 					</td>
 				</tr>
 				<tr>
@@ -282,7 +310,13 @@ class MD4AI_Settings {
 							?>
 						</label>
 						<p class="description">
-							<?php esc_html_e( 'Exposes your content as a Google OKF v0.1 bundle for AI agents: an index, a changelog, and one cross-linked Markdown file per post (also reachable via ?format=okf). Experimental — few agents crawl OKF bundles yet.', 'parseless' ); ?>
+							<?php
+							printf(
+								/* translators: %s: OKF spec version, e.g. 0.2 */
+								esc_html__( 'Exposes your content as a Google OKF v%s bundle for AI agents: an index, a changelog, and one cross-linked Markdown file per post (also reachable via ?format=okf). Experimental — few agents crawl OKF bundles yet.', 'parseless' ),
+								esc_html( MD4AI_OKF::version() )
+							);
+							?>
 						</p>
 					</td>
 				</tr>
@@ -292,6 +326,13 @@ class MD4AI_Settings {
 						<input type="text" id="md4ai_okf_endpoint" name="okf_endpoint"
 							value="<?php echo esc_attr( (string) $s['okf_endpoint'] ); ?>" class="regular-text">
 						<p class="description"><?php esc_html_e( 'The URL path the bundle is served under. Default is "okf" (so /okf/). Change it if it clashes with an existing page or post.', 'parseless' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="md4ai_okf_max_posts"><?php esc_html_e( 'OKF Max Posts', 'parseless' ); ?></label></th>
+					<td>
+						<input type="number" id="md4ai_okf_max_posts" name="okf_max_posts" min="1" max="5000"
+							value="<?php echo esc_attr( (string) (int) $s['okf_max_posts'] ); ?>" class="small-text">
 					</td>
 				</tr>
 				<tr>
@@ -313,6 +354,165 @@ class MD4AI_Settings {
 						<p class="description"><?php esc_html_e( 'Gives AI systems structured metadata (title, author, dates, featured image) derived from the post itself.', 'parseless' ); ?></p>
 					</td>
 				</tr>
+			</table>
+
+			<h2><?php esc_html_e( 'Agent discovery', 'parseless' ); ?></h2>
+			<p class="description">
+				<?php esc_html_e( 'How AI agents find and request your Markdown. These follow the conventions Cloudflare and the llms.txt ecosystem have settled on.', 'parseless' ); ?>
+			</p>
+			<table class="form-table" role="presentation">
+				<tr>
+					<th scope="row"><?php esc_html_e( 'Accept negotiation', 'parseless' ); ?></th>
+					<td>
+						<label>
+							<input type="checkbox" name="accept_negotiation" value="1" <?php checked( (bool) $s['accept_negotiation'] ); ?>>
+							<?php esc_html_e( 'Serve Markdown to clients that send Accept: text/markdown', 'parseless' ); ?>
+						</label>
+						<p class="description"><?php esc_html_e( 'The standard way agents ask for Markdown. Browsers and curl are unaffected — only clients that explicitly prefer Markdown get it.', 'parseless' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><?php esc_html_e( '.md URLs', 'parseless' ); ?></th>
+					<td>
+						<label>
+							<input type="checkbox" name="md_suffix_enabled" value="1" <?php checked( (bool) $s['md_suffix_enabled'] ); ?>>
+							<?php esc_html_e( 'Serve Markdown at /your-post.md as well as /your-post/', 'parseless' ); ?>
+						</label>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><?php esc_html_e( 'Link header', 'parseless' ); ?></th>
+					<td>
+						<label>
+							<input type="checkbox" name="link_header_enabled" value="1" <?php checked( (bool) $s['link_header_enabled'] ); ?>>
+							<?php esc_html_e( 'Advertise the Markdown version in an HTTP Link header', 'parseless' ); ?>
+						</label>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><?php esc_html_e( 'HTML link tag', 'parseless' ); ?></th>
+					<td>
+						<label>
+							<input type="checkbox" name="html_link_tag_enabled" value="1" <?php checked( (bool) $s['html_link_tag_enabled'] ); ?>>
+							<?php esc_html_e( 'Add <link rel="alternate" type="text/markdown"> to your page head', 'parseless' ); ?>
+						</label>
+					</td>
+				</tr>
+			</table>
+
+			<h2><?php esc_html_e( 'Your terms', 'parseless' ); ?></h2>
+			<p class="description">
+				<?php esc_html_e( 'Declare in robots.txt how AI systems may use your content. These are declarations, not enforcement — use the Blocked Bots list above for that.', 'parseless' ); ?>
+			</p>
+			<table class="form-table" role="presentation">
+				<?php
+				$signal_labels  = array(
+					'content_signal_search'   => __( 'Search indexing', 'parseless' ),
+					'content_signal_ai_input' => __( 'AI answers (ai-input)', 'parseless' ),
+					'content_signal_ai_train' => __( 'AI training (ai-train)', 'parseless' ),
+				);
+				$signal_choices = array(
+					'yes'  => __( 'Allow', 'parseless' ),
+					'no'   => __( 'Disallow', 'parseless' ),
+					'omit' => __( 'Say nothing', 'parseless' ),
+				);
+				foreach ( $signal_labels as $key => $label ) :
+					?>
+					<tr>
+						<th scope="row"><?php echo esc_html( $label ); ?></th>
+						<td>
+							<?php foreach ( $signal_choices as $val => $choice ) : ?>
+								<label style="margin-right:12px;">
+									<input type="radio" name="<?php echo esc_attr( $key ); ?>" value="<?php echo esc_attr( $val ); ?>"
+										<?php checked( $s[ $key ], $val ); ?>>
+									<?php echo esc_html( $choice ); ?>
+								</label>
+							<?php endforeach; ?>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+				<tr>
+					<th scope="row"><?php esc_html_e( 'Policy text', 'parseless' ); ?></th>
+					<td>
+						<label>
+							<input type="checkbox" name="content_signals_boilerplate" value="1" <?php checked( (bool) $s['content_signals_boilerplate'] ); ?>>
+							<?php esc_html_e( 'Include the Content Signals policy text in robots.txt', 'parseless' ); ?>
+						</label>
+						<p class="description"><?php esc_html_e( 'Adds a comment block explaining what each signal means and stating that restrictions are an express reservation of rights. Recommended if you disallow anything.', 'parseless' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><?php esc_html_e( 'AI bot rules', 'parseless' ); ?></th>
+					<td>
+						<label>
+							<input type="checkbox" name="robots_ai_rules" value="1" <?php checked( (bool) $s['robots_ai_rules'] ); ?>>
+							<?php esc_html_e( 'Declare your Blocked Bots list in robots.txt as Disallow rules', 'parseless' ); ?>
+						</label>
+						<p class="description"><?php esc_html_e( 'Blocked crawlers already get a 403. This tells the polite ones up front, so they never fetch at all.', 'parseless' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><?php esc_html_e( 'RSL license', 'parseless' ); ?></th>
+					<td>
+						<label>
+							<input type="checkbox" name="rsl_enabled" value="1" <?php checked( (bool) $s['rsl_enabled'] ); ?>>
+							<?php
+							printf(
+								/* translators: %s: the license file URL, e.g. https://example.com/license.xml */
+								esc_html__( 'Publish machine-readable license terms at %s', 'parseless' ),
+								'<code>' . esc_html( MD4AI_RSL::license_url() ) . '</code>'
+							);
+							?>
+						</label>
+						<p class="description"><?php esc_html_e( 'Really Simple Licensing (RSL) is an emerging standard for stating your terms in a form AI companies can read. Declaration only — no payment handling.', 'parseless' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="md4ai_rsl_permits"><?php esc_html_e( 'Permitted use', 'parseless' ); ?></label></th>
+					<td>
+						<select id="md4ai_rsl_permits" name="rsl_permits">
+							<?php
+							$permit_labels = array(
+								'all'      => __( 'Everything', 'parseless' ),
+								'search'   => __( 'Search indexing only', 'parseless' ),
+								'ai-use'   => __( 'AI answers only', 'parseless' ),
+								'train-ai' => __( 'AI training', 'parseless' ),
+								'none'     => __( 'Nothing without a licence', 'parseless' ),
+							);
+							foreach ( $permit_labels as $val => $label ) :
+								?>
+								<option value="<?php echo esc_attr( $val ); ?>" <?php selected( (string) $s['rsl_permits'], $val ); ?>>
+									<?php echo esc_html( $label ); ?>
+								</option>
+							<?php endforeach; ?>
+						</select>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="md4ai_rsl_payment_type"><?php esc_html_e( 'On what terms', 'parseless' ); ?></label></th>
+					<td>
+						<select id="md4ai_rsl_payment_type" name="rsl_payment_type">
+							<?php
+							$payment_labels = array(
+								'free'         => __( 'Free', 'parseless' ),
+								'attribution'  => __( 'Free with attribution', 'parseless' ),
+								'subscription' => __( 'Subscription — contact me', 'parseless' ),
+								'use'          => __( 'Per-use payment — contact me', 'parseless' ),
+								'training'     => __( 'Paid training licence — contact me', 'parseless' ),
+							);
+							foreach ( $payment_labels as $val => $label ) :
+								?>
+								<option value="<?php echo esc_attr( $val ); ?>" <?php selected( (string) $s['rsl_payment_type'], $val ); ?>>
+									<?php echo esc_html( $label ); ?>
+								</option>
+							<?php endforeach; ?>
+						</select>
+					</td>
+				</tr>
+			</table>
+
+			<h2><?php esc_html_e( 'Logging', 'parseless' ); ?></h2>
+			<table class="form-table" role="presentation">
 				<tr>
 					<th scope="row"><?php esc_html_e( 'Logging', 'parseless' ); ?></th>
 					<td>

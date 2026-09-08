@@ -2,7 +2,7 @@
 /**
  * Open Knowledge Format (OKF) bundle endpoint.
  *
- * Serves an OKF v0.1 bundle of the site's content for AI agents: an index.md
+ * Serves an OKF bundle of the site's content for AI agents: an index.md
  * entry point, a log.md changelog, and one Markdown concept file per post,
  * cross-linked to each other. Detected off the request path like llms.txt
  * (no rewrite rules), with a ?format=okf query fallback for sites without
@@ -22,17 +22,21 @@ class MD4AI_OKF {
 
 	private const INDEX_TRANSIENT = 'md4ai_okf_index';
 	private const LOG_TRANSIENT   = 'md4ai_okf_log';
+	private const MAP_TRANSIENT   = 'md4ai_okf_map';
 	private const CONCEPT_PREFIX  = 'md4ai_okf_c_';
-	private const OKF_VERSION     = '0.1';
+	private const OKF_VERSION     = '0.2';
 	private const DEFAULT_PATH    = 'okf';
 
 	/**
 	 * Returns the configured bundle base path (the segment before /index.md),
 	 * sanitised and defaulted. Filterable via md4ai_okf_endpoint.
 	 *
+	 * Public because MD4AI_Headers::reserved_path() needs the same answer to
+	 * guard the bundle from the ".md" suffix stripper.
+	 *
 	 * @return string
 	 */
-	private static function endpoint(): string {
+	public static function endpoint(): string {
 		$endpoint = sanitize_title( (string) md4ai_get_setting( 'okf_endpoint' ) );
 		if ( '' === $endpoint ) {
 			$endpoint = self::DEFAULT_PATH;
@@ -53,6 +57,12 @@ class MD4AI_OKF {
 			return;
 		}
 
+		// The bundle serves the same full content the Markdown endpoint 403s
+		// blocked crawlers from, so the block list applies here too.
+		if ( MD4AI_Detector::is_blocked_request() ) {
+			MD4AI_Headers::send_forbidden();
+		}
+
 		if ( 'index.md' === $file ) {
 			self::serve_cached( self::INDEX_TRANSIENT, array( __CLASS__, 'build_index' ), 0 );
 		} elseif ( 'log.md' === $file ) {
@@ -67,31 +77,44 @@ class MD4AI_OKF {
 	 *
 	 * Recognises the path forms /<endpoint>/, /<endpoint>/index.md,
 	 * /<endpoint>/log.md and /<endpoint>/<slug>.md, plus the ?format=okf
-	 * (optionally &okf=<file>) fallback.
+	 * (optionally &okf=<file>) fallback at the site root.
 	 *
 	 * @return string|null Bundle filename, or null when this is not an OKF request.
 	 */
 	private static function requested_file(): ?string {
-		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-		$path        = trim( (string) wp_parse_url( $request_uri, PHP_URL_PATH ), '/' );
-		$endpoint    = self::endpoint();
+		$path     = md4ai_request_path();
+		$endpoint = self::endpoint();
 
 		if ( $endpoint === $path ) {
 			return 'index.md';
 		}
 
-		if ( 0 === strpos( $path, $endpoint . '/' ) ) {
-			$file = basename( substr( $path, strlen( $endpoint ) + 1 ) );
-			return '' === $file ? 'index.md' : $file;
+		if ( str_starts_with( $path, $endpoint . '/' ) ) {
+			$file = substr( $path, strlen( $endpoint ) + 1 );
+			if ( '' === $file ) {
+				return 'index.md';
+			}
+			// Nested paths are not bundle files; letting WordPress 404 them
+			// stops every concept being reachable at unlimited alias URLs.
+			if ( str_contains( $file, '/' ) ) {
+				return null;
+			}
+			return $file;
 		}
 
-		// Query fallback: ?<param>=okf, with an optional &okf=<file>.
+		// Query fallback for plain-permalink sites, root only — ?format=okf on
+		// an arbitrary URL must not hijack that page.
+		if ( '' !== $path && 'index.php' !== $path ) {
+			return null;
+		}
 		$param_name = (string) md4ai_get_setting( 'query_param_name' );
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only public endpoint, no state change.
 		$param = isset( $_GET[ $param_name ] ) ? sanitize_key( wp_unslash( $_GET[ $param_name ] ) ) : '';
 		if ( 'okf' === $param ) {
-			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only public endpoint, no state change.
-			$file = isset( $_GET['okf'] ) ? basename( sanitize_file_name( wp_unslash( $_GET['okf'] ) ) ) : '';
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- read-only public endpoint; reduced to a strict filename charset below because sanitize_file_name() strips the "%" octets that percent-encoded (non-ASCII) slugs contain.
+			$raw = isset( $_GET['okf'] ) ? (string) wp_unslash( $_GET['okf'] ) : '';
+			// Same charset serve_concept() enforces; anything else 404s there.
+			$file = (string) preg_replace( '/[^A-Za-z0-9%._-]/', '', $raw );
 			return '' === $file ? 'index.md' : $file;
 		}
 
@@ -122,11 +145,12 @@ class MD4AI_OKF {
 	 * @param string $file Requested filename, e.g. "my-post.md".
 	 */
 	private static function serve_concept( string $file ): void {
-		if ( ! preg_match( '/^[A-Za-z0-9._-]+\.md$/', $file ) ) {
+		// "%" is allowed because non-ASCII post slugs are stored percent-encoded.
+		if ( ! preg_match( '/^[A-Za-z0-9%._-]+\.md$/', $file ) ) {
 			self::not_found( $file );
 		}
 
-		$slug    = substr( $file, 0, -3 );
+		$slug    = strtolower( substr( $file, 0, -3 ) );
 		$map     = self::slug_map();
 		$post_id = $map['by_slug'][ $slug ] ?? 0;
 		if ( ! $post_id ) {
@@ -160,9 +184,9 @@ class MD4AI_OKF {
 		MD4AI_Logger::record(
 			array(
 				'post_id'      => $post_id,
-				'url'          => self::current_url(),
-				'user_agent'   => self::current_ua(),
-				'bot_name'     => self::resolve_bot_name(),
+				'url'          => md4ai_current_url(),
+				'user_agent'   => md4ai_current_ua(),
+				'bot_name'     => self::is_query_request() ? 'manual' : MD4AI_Detector::bot_name(),
 				'bytes_served' => strlen( $body ),
 				'cache_hit'    => $cache_hit,
 			)
@@ -170,7 +194,12 @@ class MD4AI_OKF {
 
 		status_header( 200 );
 		header( 'Content-Type: text/markdown; charset=utf-8' );
-		header( 'X-Robots-Tag: all', true );
+		// Bundle files duplicate canonical post URLs, so they get the same
+		// noindex treatment as the ".md" and "?format=md" forms.
+		header( 'X-Robots-Tag: noindex', true );
+		// The Blocked Bots check makes every bundle URL vary by User-Agent, so
+		// a shared cache keyed on URL alone must not store the response.
+		header( 'Cache-Control: private' );
 		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- plain-text Markdown response, not HTML; entity-encoding would corrupt the output.
 		echo $body;
 		exit;
@@ -196,10 +225,10 @@ class MD4AI_OKF {
 	 */
 	public static function build_index(): string {
 		$site = wp_parse_url( home_url(), PHP_URL_HOST );
-		$desc = get_bloginfo( 'description' );
+		$desc = md4ai_site_description();
 
 		$lines   = array( '---', 'okf_version: "' . self::OKF_VERSION . '"', '---', '' );
-		$name    = get_bloginfo( 'name' );
+		$name    = md4ai_site_name();
 		$lines[] = '# ' . ( '' !== $name ? $name : $site );
 		$lines[] = '';
 		$lines[] = '' !== $desc ? $desc : ( 'An OKF v' . self::OKF_VERSION . ' bundle generated from ' . $site . '.' );
@@ -215,7 +244,7 @@ class MD4AI_OKF {
 				continue;
 			}
 			$concepts[ $slug ] = array(
-				'title' => get_the_title( $post ),
+				'title' => md4ai_plain_text( get_the_title( $post ) ),
 				'desc'  => self::description( $post ),
 			);
 		}
@@ -251,7 +280,7 @@ class MD4AI_OKF {
 			}
 			$by_date[ $date ][] = array(
 				'slug'  => $slug,
-				'title' => get_the_title( $post ),
+				'title' => md4ai_plain_text( get_the_title( $post ) ),
 			);
 		}
 
@@ -281,16 +310,14 @@ class MD4AI_OKF {
 	 * @return string
 	 */
 	private static function build_concept( WP_Post $post, array $map ): string {
-		$title = get_the_title( $post );
+		$title = md4ai_plain_text( get_the_title( $post ) );
 		$type  = 'page' === $post->post_type ? 'Page' : 'Article';
 		$desc  = self::description( $post );
 		$url   = get_permalink( $post );
 		$ts    = get_post_modified_time( 'c', true, $post );
 		$tags  = self::tags( $post );
 
-		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- intentionally applying WordPress core's the_content filter.
-		$html = apply_filters( 'the_content', $post->post_content );
-		$body = MD4AI_Converter::convert( $html );
+		$body = MD4AI::render_body( $post );
 		$body = self::rewrite_links( $body, (int) $post->ID, $map['by_postid'] );
 
 		$fm      = self::frontmatter( $type, $title, $desc, (string) $url, $tags, (string) $ts );
@@ -313,30 +340,22 @@ class MD4AI_OKF {
 	 * @return string
 	 */
 	private static function frontmatter( string $type, string $title, string $desc, string $url, array $tags, string $ts ): string {
-		$lines = array( '---', 'type: ' . self::yaml( $type ), 'title: ' . self::yaml( $title ) );
+		$lines = array( '---', 'type: ' . md4ai_yaml_quote( $type ), 'title: ' . md4ai_yaml_quote( $title ) );
 		if ( '' !== $desc ) {
-			$lines[] = 'description: ' . self::yaml( $desc );
+			$lines[] = 'description: ' . md4ai_yaml_quote( $desc );
 		}
-		$lines[] = 'resource: ' . self::yaml( $url );
+		$lines[] = 'resource: ' . md4ai_yaml_quote( $url );
 		if ( ! empty( $tags ) ) {
-			$lines[] = 'tags: [' . implode( ', ', array_map( array( __CLASS__, 'yaml' ), $tags ) ) . ']';
+			$lines[] = 'tags: [' . implode( ', ', array_map( 'md4ai_yaml_quote', $tags ) ) . ']';
 		}
+		$lines[] = 'generated:';
+		$lines[] = '  by: ' . md4ai_yaml_quote( 'parseless/' . MD4AI_VERSION );
 		if ( '' !== $ts ) {
-			$lines[] = 'timestamp: ' . $ts;
+			$lines[] = '  at: ' . $ts;
 		}
 		$lines[] = '---';
 
 		return implode( "\n", $lines );
-	}
-
-	/**
-	 * Double-quotes and escapes a string for YAML.
-	 *
-	 * @param string $value Raw value.
-	 * @return string
-	 */
-	private static function yaml( string $value ): string {
-		return '"' . str_replace( array( '\\', '"' ), array( '\\\\', '\\"' ), $value ) . '"';
 	}
 
 	/**
@@ -369,9 +388,16 @@ class MD4AI_OKF {
 	 * @return array{by_slug: array<string,int>, by_postid: array<int,string>}
 	 */
 	private static function slug_map(): array {
-		$post_types = apply_filters( 'md4ai_supported_post_types', md4ai_supported_post_types() );
+		// The map build renders every bundle post (has_body), so it must never
+		// run per request: a cache miss here is the documented O(N) cold build.
+		$cached = get_transient( self::MAP_TRANSIENT );
+		if ( is_array( $cached ) && isset( $cached['by_slug'], $cached['by_postid'] ) ) {
+			return $cached;
+		}
+
+		$post_types = md4ai_enabled_post_types();
 		$max_posts  = (int) apply_filters( 'md4ai_okf_max_posts', md4ai_get_setting( 'okf_max_posts' ) );
-		$posts      = get_posts(
+		$posts      = empty( $post_types ) ? array() : get_posts(
 			array(
 				'numberposts' => $max_posts,
 				'post_status' => 'publish',
@@ -391,6 +417,9 @@ class MD4AI_OKF {
 			if ( ! MD4AI_Detector::is_post_servable( $post ) ) {
 				continue;
 			}
+			if ( ! self::has_body( $post ) ) {
+				continue;
+			}
 			$slug = self::safe_slug( $post->post_name ? $post->post_name : ( 'post-' . $post->ID ), $used );
 
 			$used[ $slug ]          = true;
@@ -398,10 +427,26 @@ class MD4AI_OKF {
 			$by_postid[ $post->ID ] = $slug;
 		}
 
-		return array(
+		$map = array(
 			'by_slug'   => $by_slug,
 			'by_postid' => $by_postid,
 		);
+		set_transient( self::MAP_TRANSIENT, $map, self::ttl() );
+
+		return $map;
+	}
+
+	/**
+	 * Determines whether a post renders to a non-empty Markdown body.
+	 *
+	 * A concept file with frontmatter and no content wastes an agent's fetch
+	 * and makes the bundle look broken, so such posts are left out.
+	 *
+	 * @param WP_Post $post Post object.
+	 * @return bool
+	 */
+	private static function has_body( WP_Post $post ): bool {
+		return '' !== trim( MD4AI::render_body( $post ) );
 	}
 
 	/**
@@ -439,7 +484,7 @@ class MD4AI_OKF {
 		if ( '' === $desc ) {
 			$desc = get_the_excerpt( $post );
 		}
-		return trim( (string) preg_replace( '/\s+/', ' ', wp_strip_all_tags( $desc ) ) );
+		return md4ai_plain_text( $desc );
 	}
 
 	/**
@@ -460,53 +505,20 @@ class MD4AI_OKF {
 				$names[] = $cat->name;
 			}
 		}
-		$names = array_values( array_unique( array_filter( array_map( 'trim', $names ) ) ) );
+		$names = array_values( array_unique( array_filter( array_map( 'md4ai_plain_text', $names ) ) ) );
 		return array_slice( $names, 0, 12 );
 	}
 
 	/**
-	 * Resolves the bot identifier for the current request.
+	 * Whether this bundle fetch came from the ?format=okf query fallback.
 	 *
-	 * @return string Bot UA substring, "manual", or "" if unknown.
+	 * @return bool
 	 */
-	private static function resolve_bot_name(): string {
+	private static function is_query_request(): bool {
 		$param_name = (string) md4ai_get_setting( 'query_param_name' );
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only public endpoint.
 		$param = isset( $_GET[ $param_name ] ) ? sanitize_key( wp_unslash( $_GET[ $param_name ] ) ) : '';
-		if ( 'okf' === $param ) {
-			return 'manual';
-		}
-		$ua = self::current_ua();
-		if ( '' === $ua ) {
-			return '';
-		}
-		foreach ( MD4AI_Detector::get_bot_list() as $bot ) {
-			if ( false !== stripos( $ua, (string) $bot ) ) {
-				return (string) $bot;
-			}
-		}
-		return '';
-	}
-
-	/**
-	 * Returns the current request URL.
-	 *
-	 * @return string
-	 */
-	private static function current_url(): string {
-		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		$path = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : '';
-		return esc_url_raw( home_url( $path ) );
-	}
-
-	/**
-	 * Returns the current request User-Agent string.
-	 *
-	 * @return string
-	 */
-	private static function current_ua(): string {
-		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		return (string) wp_unslash( $_SERVER['HTTP_USER_AGENT'] ?? '' );
+		return 'okf' === $param;
 	}
 
 	/**
@@ -516,6 +528,15 @@ class MD4AI_OKF {
 	 */
 	private static function ttl(): int {
 		return (int) apply_filters( 'md4ai_cache_ttl', (int) md4ai_get_setting( 'cache_ttl' ) );
+	}
+
+	/**
+	 * Returns the OKF specification version this bundle targets.
+	 *
+	 * @return string
+	 */
+	public static function version(): string {
+		return self::OKF_VERSION;
 	}
 
 	/**
@@ -529,20 +550,27 @@ class MD4AI_OKF {
 	}
 
 	/**
-	 * Clears the cached index.md and log.md. Concept files expire by TTL and
-	 * are cleared individually via {@see self::clear_post()}.
+	 * Clears every cached bundle document: index, log, slug map, and all
+	 * concept files.
+	 *
+	 * Concepts embed cross-links to other concepts' slugs, so a single post
+	 * save (a slug can change) invalidates all of them. The prefix sweep is a
+	 * LIKE delete over wp_options, which persistent object caches don't see —
+	 * there, other posts' stale concepts simply expire by TTL, but the saved
+	 * post's own concept (the one guaranteed-stale document) is also deleted
+	 * by key so its edit shows up immediately on every cache backend.
+	 *
+	 * @param int $post_id Post whose save triggered the clear (0 when none).
 	 */
-	public static function clear_cache(): void {
+	public static function clear_cache( int $post_id = 0 ): void {
 		delete_transient( self::INDEX_TRANSIENT );
 		delete_transient( self::LOG_TRANSIENT );
-	}
+		delete_transient( self::MAP_TRANSIENT );
 
-	/**
-	 * Clears the cached concept file for a single post.
-	 *
-	 * @param int $post_id Post ID.
-	 */
-	public static function clear_post( int $post_id ): void {
-		delete_transient( self::CONCEPT_PREFIX . $post_id );
+		if ( $post_id > 0 ) {
+			delete_transient( self::CONCEPT_PREFIX . $post_id );
+		}
+
+		MD4AI_Cache::purge_prefix( self::CONCEPT_PREFIX );
 	}
 }

@@ -366,7 +366,11 @@ class MD4AI_Analytics {
 
 		$settings = md4ai_get_settings();
 		$bot_list = (string) $settings['bot_list'];
-		$lines    = '' === trim( $bot_list ) ? array() : array_filter( array_map( 'trim', explode( "\n", $bot_list ) ) );
+		// An empty saved list means the built-in defaults are active; seed
+		// them first, or saving a single UA would silently replace them all.
+		$lines = '' === trim( $bot_list )
+			? MD4AI_Detector::default_bot_list()
+			: array_filter( array_map( 'trim', explode( "\n", $bot_list ) ) );
 		if ( ! in_array( $ua, $lines, true ) ) {
 			$lines[] = $ua;
 		}

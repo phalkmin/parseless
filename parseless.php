@@ -3,7 +3,7 @@
  * Plugin Name:       ParseLess
  * Plugin URI:        https://github.com/phalkmin/parseless
  * Description:       Serves WordPress content as Markdown to AI crawlers and on ?format=md requests. Also exposes /llms.txt.
- * Version:           0.7.0
+ * Version:           0.8.0
  * Requires at least: 6.8
  * Requires PHP:      8.2
  * Author:            Paulo Halkmin
@@ -19,11 +19,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MD4AI_VERSION', '0.7.0' );
+define( 'MD4AI_VERSION', '0.8.0' );
 define( 'MD4AI_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MD4AI_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
 require_once MD4AI_PLUGIN_DIR . 'includes/settings.php';
+require_once MD4AI_PLUGIN_DIR . 'includes/functions-text.php';
+require_once MD4AI_PLUGIN_DIR . 'includes/functions-url.php';
 
 spl_autoload_register(
 	function ( string $class_name ): void {
@@ -45,18 +47,56 @@ spl_autoload_register(
 );
 
 /**
- * Returns public post types eligible for markdown serving (excludes attachments).
+ * Returns public post types eligible for markdown serving.
+ *
+ * Excludes attachments and post types page builders register as public but
+ * which hold configuration rather than content — Elementor's "Default Kit"
+ * being the canonical example.
  *
  * @return string[]
  */
 function md4ai_supported_post_types(): array {
 	$types = get_post_types( array( 'public' => true ) );
 	unset( $types['attachment'] );
-	return array_values( $types );
+
+	$excluded = apply_filters(
+		'md4ai_excluded_post_types',
+		array(
+			'elementor_library',
+			'e-landing-page',
+			'elementor-hf',
+			'et_pb_layout',
+			'wpbakery',
+		)
+	);
+
+	return array_values( array_diff( $types, (array) $excluded ) );
+}
+
+/**
+ * Returns the post types Markdown output is enabled for: the supported set
+ * intersected with the owner's Enabled Post Types choice, with the public
+ * md4ai_supported_post_types filter applied.
+ *
+ * May return an empty array (e.g. every saved type has since disappeared);
+ * callers must treat that as "serve nothing", never as "serve everything" —
+ * is_singular( array() ) and get_posts( post_type => array() ) both silently
+ * widen back out.
+ *
+ * @return string[]
+ */
+function md4ai_enabled_post_types(): array {
+	$all     = md4ai_supported_post_types();
+	$enabled = md4ai_get_setting( 'enabled_post_types' );
+	$base    = ( ! empty( $enabled ) && is_array( $enabled ) ) ? array_intersect( $all, $enabled ) : $all;
+
+	return (array) apply_filters( 'md4ai_supported_post_types', array_values( $base ) );
 }
 
 add_action( 'plugins_loaded', array( 'MD4AI', 'init' ) );
 add_action( 'plugins_loaded', array( 'MD4AI_Sitemap', 'init' ) );
+add_action( 'plugins_loaded', array( 'MD4AI_Robots', 'init' ) );
+add_action( 'plugins_loaded', array( 'MD4AI_RSL', 'init' ) );
 
 if ( is_admin() ) {
 	add_action( 'plugins_loaded', array( 'MD4AI_Settings', 'init' ) );

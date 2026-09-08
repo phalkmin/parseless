@@ -37,32 +37,27 @@ class MD4AI_Detector {
 	);
 
 	/**
-	 * Determines whether the current request should receive Markdown.
+	 * Set by MD4AI_Headers::maybe_strip_md_suffix() when the request URI ended
+	 * in ".md" and the suffix was stripped before routing.
+	 *
+	 * @var bool
+	 */
+	private static bool $md_suffix = false;
+
+	/**
+	 * Records that this request arrived as a ".md" URL.
+	 */
+	public static function flag_md_suffix(): void {
+		self::$md_suffix = true;
+	}
+
+	/**
+	 * Whether this request arrived as a ".md" URL.
 	 *
 	 * @return bool
 	 */
-	public static function should_serve(): bool {
-		$detection_mode = md4ai_get_setting( 'detection_mode' );
-
-		// If mode is 'ua', skip query param check entirely.
-		if ( 'ua' === $detection_mode ) {
-			return self::is_bot_request();
-		}
-
-		// Check query parameter.
-		$param_name  = md4ai_get_setting( 'query_param_name' );
-		$param_value = isset( $_GET[ $param_name ] ) ? sanitize_key( wp_unslash( $_GET[ $param_name ] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only detection, no state change
-		if ( 'md' === $param_value ) {
-			return true;
-		}
-
-		// If mode is 'query_param', skip the UA check entirely.
-		if ( 'query_param' === $detection_mode ) {
-			return false;
-		}
-
-		// Otherwise mode is 'both' — check both.
-		return self::is_bot_request();
+	public static function md_suffix_requested(): bool {
+		return self::$md_suffix;
 	}
 
 	/**
@@ -83,6 +78,153 @@ class MD4AI_Detector {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * Determines whether the request's Accept header prefers Markdown.
+	 *
+	 * Serves Markdown only when text/markdown is acceptable and at least as
+	 * preferred as text/html. A wildcard "* / *" — curl's default — never
+	 * qualifies, and a malformed header falls through to HTML.
+	 *
+	 * @return bool
+	 */
+	public static function accepts_markdown(): bool {
+		if ( ! md4ai_get_setting( 'accept_negotiation' ) ) {
+			return false;
+		}
+
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- parsed into floats below, never output.
+		$accept = (string) wp_unslash( $_SERVER['HTTP_ACCEPT'] ?? '' );
+		if ( '' === $accept ) {
+			return false;
+		}
+
+		$q = self::parse_accept( $accept );
+		if ( null === $q || ! isset( $q['text/markdown'] ) || $q['text/markdown'] <= 0.0 ) {
+			return false;
+		}
+
+		$html = $q['text/html'] ?? 0.0;
+		return $q['text/markdown'] >= $html;
+	}
+
+	/**
+	 * Parses an Accept header into explicit media type => q-value pairs.
+	 *
+	 * Wildcards are deliberately not expanded: only types the client named
+	 * outright count. Any unparseable q value makes the whole header
+	 * untrusted (null) — dropping just that one type could remove text/html
+	 * from the comparison and flip the decision toward Markdown, the
+	 * opposite of "never serve Markdown when unsure".
+	 *
+	 * @param string $accept Raw Accept header value.
+	 * @return array<string, float>|null Null when the header is malformed.
+	 */
+	private static function parse_accept( string $accept ): ?array {
+		$out = array();
+		foreach ( explode( ',', $accept ) as $part ) {
+			$params = explode( ';', $part );
+			$type   = strtolower( trim( (string) array_shift( $params ) ) );
+			if ( '' === $type || false !== strpos( $type, '*' ) ) {
+				continue;
+			}
+
+			$quality = 1.0;
+			foreach ( $params as $param ) {
+				$pair = explode( '=', $param, 2 );
+				if ( 2 !== count( $pair ) || 'q' !== strtolower( trim( $pair[0] ) ) ) {
+					continue;
+				}
+				if ( ! is_numeric( trim( $pair[1] ) ) ) {
+					return null;
+				}
+				$quality = (float) trim( $pair[1] );
+			}
+
+			$out[ $type ] = $quality;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Returns why the current request should receive Markdown, if it should.
+	 *
+	 * Precedence is deliberate: explicit URL forms first, then the Accept
+	 * header, then UA sniffing — most explicit signal wins.
+	 *
+	 * @return string One of 'query', 'suffix', 'accept', 'ua', or '' for none.
+	 */
+	public static function trigger(): string {
+		$detection_mode = md4ai_get_setting( 'detection_mode' );
+
+		if ( 'ua' !== $detection_mode ) {
+			$param_name = (string) md4ai_get_setting( 'query_param_name' );
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only detection, no state change.
+			$param_value = isset( $_GET[ $param_name ] ) ? sanitize_key( wp_unslash( $_GET[ $param_name ] ) ) : '';
+			if ( 'md' === $param_value ) {
+				return 'query';
+			}
+		}
+
+		if ( self::md_suffix_requested() ) {
+			return 'suffix';
+		}
+
+		if ( self::accepts_markdown() ) {
+			return 'accept';
+		}
+
+		if ( 'query_param' === $detection_mode ) {
+			return '';
+		}
+
+		return self::is_bot_request() ? 'ua' : '';
+	}
+
+	/**
+	 * Returns the bot identifier to log for the current request.
+	 *
+	 * @return string Bot UA substring, "manual" for an explicit request, or "".
+	 */
+	public static function bot_name(): string {
+		$trigger = self::trigger();
+		if ( 'query' === $trigger || 'suffix' === $trigger ) {
+			return 'manual';
+		}
+
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- UA used only for string matching, never in output.
+		$ua = (string) wp_unslash( $_SERVER['HTTP_USER_AGENT'] ?? '' );
+		if ( '' === $ua ) {
+			return '';
+		}
+
+		foreach ( self::get_bot_list() as $bot ) {
+			if ( false !== stripos( $ua, (string) $bot ) ) {
+				return (string) $bot;
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Determines whether the current request should receive Markdown.
+	 *
+	 * @return bool
+	 */
+	public static function should_serve(): bool {
+		return '' !== self::trigger();
+	}
+
+	/**
+	 * Returns the built-in default bot UA substrings, unfiltered.
+	 *
+	 * @return string[]
+	 */
+	public static function default_bot_list(): array {
+		return self::$default_bot_list;
 	}
 
 	/**

@@ -55,11 +55,7 @@ class MD4AI_Metabox {
 	 * Registers the metabox on supported post types.
 	 */
 	public static function register(): void {
-		$enabled    = md4ai_get_setting( 'enabled_post_types' );
-		$all        = md4ai_supported_post_types();
-		$base_types = ( ! empty( $enabled ) && is_array( $enabled ) ) ? array_intersect( $all, $enabled ) : $all;
-		$post_types = apply_filters( 'md4ai_supported_post_types', array_values( $base_types ) );
-		foreach ( $post_types as $type ) {
+		foreach ( md4ai_enabled_post_types() as $type ) {
 			add_meta_box(
 				'md4ai-preview',
 				__( 'ParseLess — Markdown Preview', 'parseless' ),
@@ -77,16 +73,20 @@ class MD4AI_Metabox {
 	 * @param WP_Post $post Current post.
 	 */
 	public static function render( WP_Post $post ): void {
-		$param_name = md4ai_get_setting( 'query_param_name' );
-		$md_url     = add_query_arg( $param_name, 'md', get_permalink( $post ) );
-		$preview    = self::build_preview( $post );
-		$nonce      = wp_create_nonce( 'md4ai_preview_' . $post->ID );
+		// markdown_url_for() picks a URL form that actually serves Markdown
+		// under the current settings ("" when none does, e.g. in UA-only
+		// detection mode, where a "?format=md" link would open plain HTML).
+		$md_url  = MD4AI_Headers::markdown_url_for( $post );
+		$preview = self::build_preview( $post );
+		$nonce   = wp_create_nonce( 'md4ai_preview_' . $post->ID );
 		?>
+		<?php if ( '' !== $md_url ) : ?>
 		<p>
 			<a href="<?php echo esc_url( $md_url ); ?>" target="_blank" rel="noopener" class="button button-secondary">
 				<?php esc_html_e( 'View as Markdown', 'parseless' ); ?>
 			</a>
 		</p>
+		<?php endif; ?>
 		<p>
 			<button type="button" class="button button-secondary" id="md4ai-copy-btn"
 				data-post-id="<?php echo esc_attr( (string) $post->ID ); ?>"
