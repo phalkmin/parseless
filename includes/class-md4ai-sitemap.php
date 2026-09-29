@@ -43,7 +43,7 @@ class MD4AI_Sitemap {
 		$cached = get_transient( self::TRANSIENT_KEY );
 		if ( false === $cached ) {
 			$cached = self::build();
-			$ttl    = (int) apply_filters( 'md4ai_cache_ttl', DAY_IN_SECONDS );
+			$ttl    = (int) apply_filters( 'md4ai_cache_ttl', DAY_IN_SECONDS, 0 );
 			set_transient( self::TRANSIENT_KEY, $cached, $ttl );
 		}
 

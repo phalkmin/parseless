@@ -44,8 +44,11 @@ class MD4AI_Headers {
 		// Anything that isn't a distinct duplicate URL (?format=md, .md) is
 		// Markdown on the canonical URL — accept, ua, or a serve forced via
 		// the md4ai_should_serve_markdown filter — and a shared cache keyed
-		// on URL alone would hand it to browsers.
-		if ( 'query' !== $trigger && 'suffix' !== $trigger ) {
+		// on URL alone would hand it to browsers. The duplicate URLs vary by
+		// User-Agent too once any crawler is blocked: a stored 200 would be
+		// replayed to a crawler the 403 check never got to see.
+		$duplicate_url = 'query' === $trigger || 'suffix' === $trigger;
+		if ( ! $duplicate_url || ! empty( MD4AI_Detector::get_blocked_bot_list() ) ) {
 			header( 'Cache-Control: private' );
 		}
 	}

@@ -45,6 +45,8 @@ function md4ai_get_default_settings(): array {
 		'rsl_enabled'                 => false,
 		'rsl_permits'                 => 'train-ai',
 		'rsl_payment_type'            => 'attribution',
+		'product_details_enabled'     => true,
+		'product_cache_ttl'           => HOUR_IN_SECONDS,
 	);
 }
 

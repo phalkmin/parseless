@@ -64,6 +64,14 @@ class MD4AI_Settings {
 		$signal_train       = isset( $_POST['content_signal_ai_train'] ) ? sanitize_key( wp_unslash( $_POST['content_signal_ai_train'] ) ) : '';
 		$rsl_permits        = isset( $_POST['rsl_permits'] ) ? sanitize_text_field( wp_unslash( $_POST['rsl_permits'] ) ) : '';
 		$rsl_payment        = isset( $_POST['rsl_payment_type'] ) ? sanitize_key( wp_unslash( $_POST['rsl_payment_type'] ) ) : '';
+		$product_details    = isset( $_POST['product_details_enabled'] );
+		$product_ttl        = isset( $_POST['product_cache_ttl'] ) ? absint( wp_unslash( $_POST['product_cache_ttl'] ) ) : 0;
+		if ( ! MD4AI_WooCommerce::is_active() ) {
+			// The WooCommerce section only renders when Woo is active; its
+			// absent fields must not silently reset the saved values.
+			$product_details = (bool) md4ai_get_setting( 'product_details_enabled' );
+			$product_ttl     = absint( md4ai_get_setting( 'product_cache_ttl' ) );
+		}
 		// RSL 1.0 vocabulary: usage tokens for <permits>, payment types for
 		// <payment>. "none" is our own sentinel that emits <prohibits>.
 		$permit_tokens = array( 'all', 'train-ai', 'ai-use', 'search', 'none' );
@@ -112,6 +120,8 @@ class MD4AI_Settings {
 			'rsl_enabled'                 => isset( $_POST['rsl_enabled'] ),
 			'rsl_permits'                 => in_array( $rsl_permits, $permit_tokens, true ) ? $rsl_permits : $defaults['rsl_permits'],
 			'rsl_payment_type'            => in_array( $rsl_payment, $payment_types, true ) ? $rsl_payment : $defaults['rsl_payment_type'],
+			'product_details_enabled'     => $product_details,
+			'product_cache_ttl'           => $product_ttl > 0 ? $product_ttl : $defaults['product_cache_ttl'],
 		);
 
 		if ( '' === $settings['query_param_name'] ) {
@@ -127,7 +137,7 @@ class MD4AI_Settings {
 		// in llms.txt, the query param name in sitemap URLs, and the
 		// frontmatter/schema toggles in every per-post Markdown body.
 		MD4AI_LLMsTxt::clear_cache();
-		MD4AI_OKF::clear_cache();
+		MD4AI_OKF::purge_all();
 		MD4AI_RSL::clear_cache();
 		MD4AI_Sitemap::clear_cache();
 		MD4AI_Cache::purge_all();
@@ -510,6 +520,34 @@ class MD4AI_Settings {
 					</td>
 				</tr>
 			</table>
+
+			<?php if ( MD4AI_WooCommerce::is_active() ) : ?>
+			<h2><?php esc_html_e( 'WooCommerce', 'parseless' ); ?></h2>
+			<p class="description">
+				<?php esc_html_e( 'Products already appear in your Markdown output, but without price, SKU or stock an agent cannot answer the question customers actually ask.', 'parseless' ); ?>
+			</p>
+			<table class="form-table" role="presentation">
+				<tr>
+					<th scope="row"><?php esc_html_e( 'Product details', 'parseless' ); ?></th>
+					<td>
+						<label>
+							<input type="checkbox" name="product_details_enabled" value="1" <?php checked( (bool) $s['product_details_enabled'] ); ?>>
+							<?php esc_html_e( 'Include price, SKU, stock, categories and attributes in product output', 'parseless' ); ?>
+						</label>
+						<p class="description"><?php esc_html_e( 'Cart, checkout and account pages are always excluded.', 'parseless' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="md4ai_product_cache_ttl"><?php esc_html_e( 'Product cache lifetime', 'parseless' ); ?></label></th>
+					<td>
+						<input type="number" id="md4ai_product_cache_ttl" name="product_cache_ttl" class="small-text"
+							min="60" step="60" value="<?php echo esc_attr( (string) absint( $s['product_cache_ttl'] ) ); ?>">
+						<?php esc_html_e( 'seconds', 'parseless' ); ?>
+						<p class="description"><?php esc_html_e( 'Shorter than the general cache lifetime, because prices and stock change. One hour by default.', 'parseless' ); ?></p>
+					</td>
+				</tr>
+			</table>
+			<?php endif; ?>
 
 			<h2><?php esc_html_e( 'Logging', 'parseless' ); ?></h2>
 			<table class="form-table" role="presentation">

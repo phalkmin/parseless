@@ -134,7 +134,9 @@ class MD4AI_OKF {
 		if ( false === $cached ) {
 			$cached    = $builder();
 			$cache_hit = false;
-			set_transient( $key, $cached, self::ttl() );
+			if ( ! MD4AI_Cache::bypass() ) {
+				set_transient( $key, $cached, MD4AI_Cache::ttl() );
+			}
 		}
 		self::output( $cached, $post_id, $cache_hit );
 	}
@@ -152,8 +154,9 @@ class MD4AI_OKF {
 
 		$slug    = strtolower( substr( $file, 0, -3 ) );
 		$map     = self::slug_map();
-		$post_id = $map['by_slug'][ $slug ] ?? 0;
-		if ( ! $post_id ) {
+		$post_id = (int) ( $map['by_slug'][ $slug ] ?? 0 );
+		$post    = $post_id > 0 ? self::servable_post( $post_id ) : null;
+		if ( ! $post ) {
 			self::not_found( $file );
 		}
 
@@ -161,16 +164,37 @@ class MD4AI_OKF {
 		$cache_key = self::CONCEPT_PREFIX . $post_id;
 		$cached    = get_transient( $cache_key );
 		if ( false === $cached ) {
-			$post = get_post( $post_id );
-			if ( ! $post ) {
-				self::not_found( $file );
-			}
 			$cached    = self::build_concept( $post, $map );
 			$cache_hit = false;
-			set_transient( $cache_key, $cached, self::ttl() );
+			if ( ! MD4AI_Cache::bypass() ) {
+				set_transient( $cache_key, $cached, MD4AI_Cache::ttl( $post_id ) );
+			}
 		}
 
 		self::output( $cached, $post_id, $cache_hit );
+	}
+
+	/**
+	 * Returns a post the slug map admitted, if it is still servable right now.
+	 *
+	 * The map and the concept caches can outlive a direct delete or a
+	 * metadata-only noindex change that never reached save_post, so
+	 * membership is rechecked on every fetch — cache hit or not — rather
+	 * than trusted from the map.
+	 *
+	 * @param int $post_id Post ID from the slug map.
+	 * @return WP_Post|null Null when the post is gone or no longer eligible.
+	 */
+	private static function servable_post( int $post_id ): ?WP_Post {
+		$post = get_post( $post_id );
+		if ( ! $post instanceof WP_Post ) {
+			return null;
+		}
+		if ( ! in_array( $post->post_type, md4ai_enabled_post_types(), true ) ) {
+			return null;
+		}
+
+		return MD4AI_Detector::is_post_servable( $post ) ? $post : null;
 	}
 
 	/**
@@ -186,7 +210,7 @@ class MD4AI_OKF {
 				'post_id'      => $post_id,
 				'url'          => md4ai_current_url(),
 				'user_agent'   => md4ai_current_ua(),
-				'bot_name'     => self::is_query_request() ? 'manual' : MD4AI_Detector::bot_name(),
+				'bot_name'     => self::bot_name(),
 				'bytes_served' => strlen( $body ),
 				'cache_hit'    => $cache_hit,
 			)
@@ -203,6 +227,21 @@ class MD4AI_OKF {
 		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- plain-text Markdown response, not HTML; entity-encoding would corrupt the output.
 		echo $body;
 		exit;
+	}
+
+	/**
+	 * Returns the bot identifier to log for a bundle fetch: the crawler when
+	 * the UA names one, otherwise "manual" for the ?format=okf fallback.
+	 *
+	 * @return string
+	 */
+	private static function bot_name(): string {
+		$bot_name = MD4AI_Detector::bot_name();
+		if ( '' === $bot_name && self::is_query_request() ) {
+			return 'manual';
+		}
+
+		return $bot_name;
 	}
 
 	/**
@@ -311,7 +350,7 @@ class MD4AI_OKF {
 	 */
 	private static function build_concept( WP_Post $post, array $map ): string {
 		$title = md4ai_plain_text( get_the_title( $post ) );
-		$type  = 'page' === $post->post_type ? 'Page' : 'Article';
+		$type  = MD4AI_WooCommerce::okf_type( $post, 'page' === $post->post_type ? 'Page' : 'Article' );
 		$desc  = self::description( $post );
 		$url   = get_permalink( $post );
 		$ts    = get_post_modified_time( 'c', true, $post );
@@ -319,6 +358,11 @@ class MD4AI_OKF {
 
 		$body = MD4AI::render_body( $post );
 		$body = self::rewrite_links( $body, (int) $post->ID, $map['by_postid'] );
+
+		$schema = MD4AI_WooCommerce::okf_schema_section( $post );
+		if ( '' !== $schema ) {
+			$body = trim( $body . "\n\n" . $schema );
+		}
 
 		$fm      = self::frontmatter( $type, $title, $desc, (string) $url, $tags, (string) $ts );
 		$heading = preg_match( '/^\s*#{1,6}\s/', $body ) ? '' : ( '# ' . $title . "\n\n" );
@@ -388,8 +432,11 @@ class MD4AI_OKF {
 	 * @return array{by_slug: array<string,int>, by_postid: array<int,string>}
 	 */
 	private static function slug_map(): array {
-		// The map build renders every bundle post (has_body), so it must never
+		// The map build renders every bundle post (has_body), so it must not
 		// run per request: a cache miss here is the documented O(N) cold build.
+		// A logged-in requester never stores it (has_body varies by session,
+		// see MD4AI_Cache::bypass()), so they pay the build until the first
+		// anonymous fetch — a crawler's, in practice — warms it.
 		$cached = get_transient( self::MAP_TRANSIENT );
 		if ( is_array( $cached ) && isset( $cached['by_slug'], $cached['by_postid'] ) ) {
 			return $cached;
@@ -431,22 +478,27 @@ class MD4AI_OKF {
 			'by_slug'   => $by_slug,
 			'by_postid' => $by_postid,
 		);
-		set_transient( self::MAP_TRANSIENT, $map, self::ttl() );
+		if ( ! MD4AI_Cache::bypass() ) {
+			set_transient( self::MAP_TRANSIENT, $map, MD4AI_Cache::ttl() );
+		}
 
 		return $map;
 	}
 
 	/**
-	 * Determines whether a post renders to a non-empty Markdown body.
+	 * Determines whether a post yields a concept with content in it.
 	 *
 	 * A concept file with frontmatter and no content wastes an agent's fetch
-	 * and makes the bundle look broken, so such posts are left out.
+	 * and makes the bundle look broken, so such posts are left out. A product
+	 * with no long description still gets its schema section — the price,
+	 * stock and SKU an agent actually wants — so it counts, and the cheap
+	 * check runs first to spare the render.
 	 *
 	 * @param WP_Post $post Post object.
 	 * @return bool
 	 */
 	private static function has_body( WP_Post $post ): bool {
-		return '' !== trim( MD4AI::render_body( $post ) );
+		return MD4AI_WooCommerce::has_details( $post ) || '' !== trim( MD4AI::render_body( $post ) );
 	}
 
 	/**
@@ -488,21 +540,29 @@ class MD4AI_OKF {
 	}
 
 	/**
-	 * Returns a post's tags plus categories, deduped and capped at 12.
+	 * Returns a concept's tags, drawn from every public taxonomy registered
+	 * for its post type, deduped and capped at 12.
+	 *
+	 * Reading post_tag and category directly would miss product categories,
+	 * product attributes, and any custom post type's own taxonomies.
 	 *
 	 * @param WP_Post $post Post object.
 	 * @return string[]
 	 */
 	private static function tags( WP_Post $post ): array {
 		$names = array();
-		foreach ( (array) get_the_tags( $post->ID ) as $term ) {
-			if ( $term instanceof WP_Term ) {
-				$names[] = $term->name;
+		foreach ( get_object_taxonomies( $post->post_type, 'objects' ) as $taxonomy ) {
+			if ( empty( $taxonomy->public ) ) {
+				continue;
 			}
-		}
-		foreach ( (array) get_the_category( $post->ID ) as $cat ) {
-			if ( $cat instanceof WP_Term && 'Uncategorized' !== $cat->name ) {
-				$names[] = $cat->name;
+			$terms = get_the_terms( $post->ID, $taxonomy->name );
+			if ( ! is_array( $terms ) ) {
+				continue;
+			}
+			foreach ( $terms as $term ) {
+				if ( 'Uncategorized' !== $term->name ) {
+					$names[] = $term->name;
+				}
 			}
 		}
 		$names = array_values( array_unique( array_filter( array_map( 'md4ai_plain_text', $names ) ) ) );
@@ -519,15 +579,6 @@ class MD4AI_OKF {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only public endpoint.
 		$param = isset( $_GET[ $param_name ] ) ? sanitize_key( wp_unslash( $_GET[ $param_name ] ) ) : '';
 		return 'okf' === $param;
-	}
-
-	/**
-	 * Returns the cache TTL for bundle documents.
-	 *
-	 * @return int
-	 */
-	private static function ttl(): int {
-		return (int) apply_filters( 'md4ai_cache_ttl', (int) md4ai_get_setting( 'cache_ttl' ) );
 	}
 
 	/**
@@ -572,5 +623,16 @@ class MD4AI_OKF {
 		}
 
 		MD4AI_Cache::purge_prefix( self::CONCEPT_PREFIX );
+	}
+
+	/**
+	 * Clears the whole bundle on every cache backend, concept files included.
+	 *
+	 * For settings saves, where the output of every concept changes at once
+	 * and waiting out the TTL on a persistent object cache is not acceptable.
+	 */
+	public static function purge_all(): void {
+		self::clear_cache();
+		MD4AI_Cache::purge_object_cache( self::CONCEPT_PREFIX );
 	}
 }

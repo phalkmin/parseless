@@ -4,7 +4,7 @@ Tags: ai, markdown, llms, bots, crawlers
 Requires at least: 6.8
 Tested up to: 7.0
 Requires PHP: 8.2
-Stable tag: 0.8.0
+Stable tag: 0.9.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -66,7 +66,8 @@ Numbers vary by theme and content. Heavier setups (Elementor, Divi, Avada) see t
 * Transient-based caching with configurable TTL
 * Settings page at **Tools → ParseLess** for detection mode, bot list, cache TTL, post types, and llms.txt control
 * Per-post meta box with Markdown preview and copy-to-clipboard
-* Extensible via filters: `md4ai_bot_list`, `md4ai_blocked_bots`, `md4ai_supported_post_types`, `md4ai_excluded_post_types`, `md4ai_markdown_output`, `md4ai_cache_ttl`, `md4ai_should_serve_markdown`, `md4ai_llmstxt_max_posts`, `md4ai_llmsfull_max_bytes`, `md4ai_sitemap_max_posts`, `md4ai_okf_endpoint`, `md4ai_okf_concept`, `md4ai_okf_max_posts`, `md4ai_rsl_terms_url`, `md4ai_rsl_xml`, `md4ai_log_request`
+* Running WooCommerce? Products are served with the fields agents ask about — price, sale price, SKU, stock, categories, attributes and variations — as structured Markdown, and marked as products in your OKF bundle. Cart and checkout pages are excluded automatically.
+* Extensible via filters: `md4ai_bot_list`, `md4ai_blocked_bots`, `md4ai_supported_post_types`, `md4ai_excluded_post_types`, `md4ai_excluded_post_ids`, `md4ai_markdown_output`, `md4ai_product_details`, `md4ai_max_variations`, `md4ai_cache_ttl`, `md4ai_should_serve_markdown`, `md4ai_llmstxt_max_posts`, `md4ai_llmsfull_max_bytes`, `md4ai_sitemap_max_posts`, `md4ai_okf_endpoint`, `md4ai_okf_concept`, `md4ai_okf_max_posts`, `md4ai_rsl_terms_url`, `md4ai_rsl_xml`, `md4ai_log_request`
 
 == Installation ==
 
@@ -124,6 +125,15 @@ Logs are pruned daily according to the configured retention window
 "Delete all logged requests" at any time from Tools → ParseLess.
 
 == Changelog ==
+
+= 0.9.0 =
+* New: WooCommerce products now include the details an AI agent actually needs — price, sale price, SKU, stock status and quantity, categories, and attributes — as a clean table. Until now a product was served as a title and a paragraph, so an agent asked "what does this cost and can I buy it" had nothing to work with.
+* New: variable products list their variations, each with its own options, SKU, price and availability. Long variation lists are capped and the output tells you when it capped them.
+* New: your OKF bundle marks products as `type: "Product"` and gives them a `# Schema` section, which is what OKF-aware consumers look for.
+* New: product categories and attributes now appear as tags in the OKF bundle. Custom post types with their own taxonomies benefit from the same fix — previously only standard post categories and tags were picked up.
+* New: products get their own, shorter cache lifetime (one hour by default), because a stale price is worse than a stale blog post. Both settings live in a WooCommerce section on Tools → ParseLess that only appears when WooCommerce is active.
+* Improved: cart, checkout, my-account and terms pages are never served as Markdown. They render as empty shells without a shopping session, so they were only ever noise in your llms.txt and OKF bundle.
+* Developer: new filters `md4ai_excluded_post_ids`, `md4ai_product_details` and `md4ai_max_variations`; `md4ai_cache_ttl` now receives the post ID as a second argument.
 
 = 0.8.0 =
 * New: AI agents can now simply ask for Markdown. Clients that send an `Accept: text/markdown` request header — Claude Code, OpenCode and a growing number of agents do this by default — get Markdown without needing to know about `?format=md`. On by default.

@@ -20,6 +20,10 @@ class MD4AI {
 	public static function init(): void {
 		add_action( 'template_redirect', array( __CLASS__, 'maybe_serve_markdown' ), 1 );
 		add_action( 'save_post', array( __CLASS__, 'on_save_post' ) );
+		add_action( 'deleted_post', array( __CLASS__, 'on_deleted_post' ), 10, 2 );
+		foreach ( array( 'added_post_meta', 'updated_post_meta', 'deleted_post_meta' ) as $meta_hook ) {
+			add_action( $meta_hook, array( __CLASS__, 'on_post_meta_change' ), 10, 3 );
+		}
 		add_action( 'init', array( __CLASS__, 'maybe_serve_llms_txt' ) );
 		add_action( 'init', array( 'MD4AI_OKF', 'maybe_serve' ) );
 		MD4AI_Headers::init();
@@ -235,6 +239,72 @@ class MD4AI {
 			return;
 		}
 
+		self::clear_post_caches( $post_id );
+	}
+
+	/**
+	 * Clears cached documents when a post is permanently deleted.
+	 *
+	 * Trashing goes through wp_update_post() and reaches on_save_post(). A
+	 * direct delete — WP-CLI, EMPTY_TRASH_DAYS = 0, a post type without
+	 * trash — fires nothing on the save side, and would leave the post's
+	 * content in llms-full.txt and its OKF concept until they expire.
+	 *
+	 * @param int          $post_id Deleted post ID.
+	 * @param WP_Post|null $post    The post as it was before deletion. Core
+	 *                              always passes it; a third-party re-fire of
+	 *                              the hook may not, and then we clear anyway.
+	 */
+	public static function on_deleted_post( int $post_id, ?WP_Post $post = null ): void {
+		if ( $post instanceof WP_Post && ! self::serves_type( $post->post_type ) ) {
+			return;
+		}
+
+		self::clear_post_caches( $post_id );
+	}
+
+	/**
+	 * Clears cached documents when a noindex flag changes without a post save.
+	 *
+	 * SEO plugins' bulk editors and WP-CLI write these flags with
+	 * update_post_meta() alone, and is_post_servable() reads them, so a
+	 * post's eligibility can flip with no save_post to notice it.
+	 *
+	 * @param int|int[] $meta_id  Meta row ID(s); unused.
+	 * @param int       $post_id  Post the meta belongs to.
+	 * @param string    $meta_key Meta key.
+	 */
+	public static function on_post_meta_change( $meta_id, int $post_id, string $meta_key ): void {
+		if ( ! in_array( $meta_key, MD4AI_Detector::NOINDEX_META_KEYS, true ) ) {
+			return;
+		}
+
+		// Attachments and other unserved types carry these flags too; a bulk
+		// edit over them must not wipe the bundle once per row.
+		$post = get_post( $post_id );
+		if ( ! $post instanceof WP_Post || ! self::serves_type( $post->post_type ) ) {
+			return;
+		}
+
+		self::clear_post_caches( $post_id );
+	}
+
+	/**
+	 * Whether posts of a type can appear in any document this plugin serves.
+	 *
+	 * @param string $post_type Post type name.
+	 * @return bool
+	 */
+	private static function serves_type( string $post_type ): bool {
+		return in_array( $post_type, md4ai_enabled_post_types(), true );
+	}
+
+	/**
+	 * Drops every cached document a change to one post can invalidate.
+	 *
+	 * @param int $post_id Post ID.
+	 */
+	private static function clear_post_caches( int $post_id ): void {
 		MD4AI_Cache::delete( $post_id );
 		MD4AI_Sitemap::clear_cache();
 		MD4AI_LLMsTxt::clear_cache();

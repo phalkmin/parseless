@@ -42,9 +42,13 @@ class MD4AI_Converter {
 		}
 
 		$md = self::children_to_md( $body, array() );
+		// Block handlers each emit their own surrounding blank lines, so runs
+		// stack up between siblings. Fenced code tagged its own newlines (see
+		// pre_to_md) and so keeps its blank lines through the collapse.
 		$md = preg_replace( "/\n{3,}/", "\n\n", (string) $md );
+		$md = str_replace( "\0", '', (string) $md );
 
-		return trim( (string) $md );
+		return trim( $md );
 	}
 
 	/**
@@ -119,11 +123,7 @@ class MD4AI_Converter {
 				if ( ! empty( $ctx['in_pre'] ) ) {
 					return $code;
 				}
-				// A backtick inside the code span needs a wider delimiter.
-				if ( false !== strpos( $code, '`' ) ) {
-					return '`` ' . $code . ' ``';
-				}
-				return '`' . $code . '`';
+				return self::code_span( $code );
 
 			case 'pre':
 				return self::pre_to_md( $node, $ctx );
@@ -164,7 +164,7 @@ class MD4AI_Converter {
 
 			case 'ul':
 			case 'ol':
-				return self::list_to_md( $node, $ctx, $ctx['list_depth'] ?? 0 );
+				return self::list_to_md( $node, $ctx, (string) ( $ctx['list_indent'] ?? '' ) );
 
 			case 'blockquote':
 				$inner  = trim( self::children_to_md( $node, $ctx ) );
@@ -200,11 +200,18 @@ class MD4AI_Converter {
 	 */
 	private static function pre_to_md( DOMElement $node, array $ctx ): string {
 		$lang       = '';
+		$source     = $node;
 		$code_nodes = $node->getElementsByTagName( 'code' );
 		if ( $code_nodes->length > 0 ) {
-			$class = $code_nodes->item( 0 )->getAttribute( 'class' );
-			if ( preg_match( '/(?:^|\s)language-(\w+)/', $class, $m ) ) {
+			$code_el = $code_nodes->item( 0 );
+			if ( preg_match( '/(?:^|\s)language-(\w+)/', $code_el->getAttribute( 'class' ), $m ) ) {
 				$lang = $m[1];
+			}
+			// Pretty-printed HTML indents a lone <code> inside its <pre>; that
+			// whitespace is markup, not content, so only <code>'s text is used.
+			// phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOMDocument property.
+			if ( 1 === $code_nodes->length && $code_el->parentNode->isSameNode( $node ) ) {
+				$source = $code_el;
 			}
 		}
 		$pre_ctx = array_merge(
@@ -214,22 +221,68 @@ class MD4AI_Converter {
 				'in_code' => true,
 			)
 		);
-		$code    = self::children_to_md( $node, $pre_ctx );
-		return "\n\n```{$lang}\n" . trim( $code ) . "\n```\n\n";
+		$code    = self::children_to_md( $source, $pre_ctx );
+		// Leading blank lines (the newline after <pre>) and trailing whitespace
+		// go; the first line's indentation is content and stays.
+		$code  = rtrim( (string) preg_replace( '/^(?:[ \t]*\r?\n)+/', '', $code ) );
+		$fence = str_repeat( '`', max( 3, self::longest_backtick_run( $code ) + 1 ) );
+		// A NUL after each newline keeps the block's blank lines out of reach
+		// of every later newline collapse (convert(), list items); convert()
+		// strips the tags once the tree walk is done. libxml never yields NUL
+		// in text, so no real content goes with them.
+		$code = str_replace( "\n", "\n\0", $code );
+
+		return "\n\n{$fence}{$lang}\n" . $code . "\n{$fence}\n\n";
+	}
+
+	/**
+	 * Wraps text in a code span whose delimiter is longer than any backtick
+	 * run inside it. The padding spaces keep an edge backtick from merging
+	 * with the delimiter; CommonMark strips one space from each side.
+	 *
+	 * @param string $code Code span content.
+	 * @return string
+	 */
+	private static function code_span( string $code ): string {
+		$run = self::longest_backtick_run( $code );
+		if ( 0 === $run ) {
+			return '`' . $code . '`';
+		}
+		$fence = str_repeat( '`', $run + 1 );
+		return $fence . ' ' . $code . ' ' . $fence;
+	}
+
+	/**
+	 * Returns the length of the longest run of consecutive backticks.
+	 *
+	 * @param string $text Text to scan.
+	 * @return int
+	 */
+	private static function longest_backtick_run( string $text ): int {
+		if ( ! preg_match_all( '/`+/', $text, $m ) ) {
+			return 0;
+		}
+		return max( array_map( 'strlen', $m[0] ) );
 	}
 
 	/**
 	 * Converts a list to Markdown.
 	 *
-	 * @param DOMElement           $node  List element.
-	 * @param array<string, mixed> $ctx   Conversion context.
-	 * @param int                  $depth List depth.
+	 * Ordered lists keep their numbering, start attribute included. Each
+	 * item's continuation lines and nested lists are indented to the width
+	 * of its own marker — what keeps a "10. " item's children inside it.
+	 *
+	 * @param DOMElement           $node   List element.
+	 * @param array<string, mixed> $ctx    Conversion context.
+	 * @param string               $indent Indentation before this list's markers.
 	 * @return string
 	 */
-	private static function list_to_md( DOMElement $node, array $ctx, int $depth ): string {
-		$indent   = str_repeat( '  ', $depth );
-		$item_ctx = array_merge( $ctx, array( 'list_depth' => $depth + 1 ) );
-		$out      = 0 === $depth ? "\n" : '';
+	private static function list_to_md( DOMElement $node, array $ctx, string $indent ): string {
+		$top = '' === $indent;
+		// phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOMDocument property.
+		$ordered = 'ol' === strtolower( $node->tagName );
+		$number  = $node->hasAttribute( 'start' ) ? max( 0, (int) $node->getAttribute( 'start' ) ) : 1;
+		$out     = $top ? "\n" : '';
 
 		// phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOMDocument property.
 		foreach ( $node->childNodes as $child ) {
@@ -238,6 +291,9 @@ class MD4AI_Converter {
 				continue;
 			}
 
+			$marker       = $ordered ? $number . '. ' : '- ';
+			$item_indent  = $indent . str_repeat( ' ', strlen( $marker ) );
+			$item_ctx     = array_merge( $ctx, array( 'list_indent' => $item_indent ) );
 			$item_text    = '';
 			$nested_lists = '';
 
@@ -247,7 +303,7 @@ class MD4AI_Converter {
 					// phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOMDocument property.
 					$li_tag = strtolower( $li_child->tagName );
 					if ( 'ul' === $li_tag || 'ol' === $li_tag ) {
-						$nested_lists .= self::list_to_md( $li_child, $item_ctx, $depth + 1 );
+						$nested_lists .= self::list_to_md( $li_child, $item_ctx, $item_indent );
 						continue;
 					}
 				}
@@ -257,15 +313,13 @@ class MD4AI_Converter {
 			$item_text = trim( $item_text );
 			// Continuation lines must be indented to stay inside the list item.
 			$item_text = preg_replace( "/\n{2,}/", "\n", $item_text );
-			$item_text = str_replace( "\n", "\n" . $indent . '  ', (string) $item_text );
+			$item_text = str_replace( "\n", "\n" . $item_indent, (string) $item_text );
 
-			$out .= $indent . '- ' . $item_text . "\n";
-			if ( '' !== $nested_lists ) {
-				$out .= $nested_lists;
-			}
+			$out .= $indent . $marker . $item_text . "\n" . $nested_lists;
+			++$number;
 		}
 
-		return $out . ( 0 === $depth ? "\n" : '' );
+		return $out . ( $top ? "\n" : '' );
 	}
 
 	/**

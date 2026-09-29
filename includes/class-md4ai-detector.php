@@ -37,6 +37,20 @@ class MD4AI_Detector {
 	);
 
 	/**
+	 * Post meta keys whose value can flip is_post_servable().
+	 *
+	 * The invalidation-side counterpart of is_noindex(): a write to one of
+	 * these without a post save must still clear the caches.
+	 *
+	 * @var string[]
+	 */
+	public const NOINDEX_META_KEYS = array(
+		'_yoast_wpseo_meta-robots-noindex',
+		'rank_math_robots',
+		'_genesis_noindex',
+	);
+
+	/**
 	 * Set by MD4AI_Headers::maybe_strip_md_suffix() when the request URI ended
 	 * in ".md" and the suffix was stripped before routing.
 	 *
@@ -186,27 +200,26 @@ class MD4AI_Detector {
 	/**
 	 * Returns the bot identifier to log for the current request.
 	 *
+	 * A known crawler is identified by its User-Agent whichever URL form it
+	 * used: GPTBot following the advertised ".md" link is still GPTBot, not
+	 * manual traffic. Only an unrecognised UA on an explicit URL is "manual".
+	 *
 	 * @return string Bot UA substring, "manual" for an explicit request, or "".
 	 */
 	public static function bot_name(): string {
-		$trigger = self::trigger();
-		if ( 'query' === $trigger || 'suffix' === $trigger ) {
-			return 'manual';
-		}
-
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- UA used only for string matching, never in output.
 		$ua = (string) wp_unslash( $_SERVER['HTTP_USER_AGENT'] ?? '' );
-		if ( '' === $ua ) {
-			return '';
-		}
-
-		foreach ( self::get_bot_list() as $bot ) {
-			if ( false !== stripos( $ua, (string) $bot ) ) {
-				return (string) $bot;
+		if ( '' !== $ua ) {
+			foreach ( self::get_bot_list() as $bot ) {
+				if ( false !== stripos( $ua, (string) $bot ) ) {
+					return (string) $bot;
+				}
 			}
 		}
 
-		return '';
+		$trigger = self::trigger();
+
+		return ( 'query' === $trigger || 'suffix' === $trigger ) ? 'manual' : '';
 	}
 
 	/**
@@ -331,6 +344,10 @@ class MD4AI_Detector {
 	 */
 	public static function is_post_servable( WP_Post $post ): bool {
 		if ( 'publish' !== $post->post_status ) {
+			return false;
+		}
+		$excluded = (array) apply_filters( 'md4ai_excluded_post_ids', array() );
+		if ( in_array( (int) $post->ID, array_map( 'absint', $excluded ), true ) ) {
 			return false;
 		}
 		if ( '' !== $post->post_password ) {
