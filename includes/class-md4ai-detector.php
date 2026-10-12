@@ -25,6 +25,7 @@ class MD4AI_Detector {
 		'OAI-SearchBot',
 		'ClaudeBot',
 		'Claude-User',
+		'Claude-SearchBot',
 		'anthropic-ai',
 		'PerplexityBot',
 		'Perplexity-User',
@@ -33,7 +34,11 @@ class MD4AI_Detector {
 		'Applebot-Extended',
 		'Bytespider',
 		'Meta-ExternalAgent',
+		'Meta-ExternalFetcher',
 		'cohere-ai',
+		'Amazonbot',
+		'DuckAssistBot',
+		'MistralAI-User',
 	);
 
 	/**
@@ -48,7 +53,13 @@ class MD4AI_Detector {
 		'_yoast_wpseo_meta-robots-noindex',
 		'rank_math_robots',
 		'_genesis_noindex',
+		self::EXCLUDE_META_KEY,
 	);
+
+	/**
+	 * Per-post "Exclude from AI" flag, set from the ParseLess metabox.
+	 */
+	public const EXCLUDE_META_KEY = '_md4ai_exclude';
 
 	/**
 	 * Set by MD4AI_Headers::maybe_strip_md_suffix() when the request URI ended
@@ -356,7 +367,20 @@ class MD4AI_Detector {
 		if ( self::is_noindex( $post->ID ) ) {
 			return false;
 		}
+		if ( self::is_excluded( $post->ID ) ) {
+			return false;
+		}
 		return true;
+	}
+
+	/**
+	 * Whether the owner ticked "Exclude from AI" on this post.
+	 *
+	 * @param int $post_id Post ID.
+	 * @return bool
+	 */
+	public static function is_excluded( int $post_id ): bool {
+		return '1' === (string) get_post_meta( $post_id, self::EXCLUDE_META_KEY, true );
 	}
 
 	/**

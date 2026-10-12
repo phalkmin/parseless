@@ -58,10 +58,8 @@ class MD4AI_OKF {
 		}
 
 		// The bundle serves the same full content the Markdown endpoint 403s
-		// blocked crawlers from, so the block list applies here too.
-		if ( MD4AI_Detector::is_blocked_request() ) {
-			MD4AI_Headers::send_forbidden();
-		}
+		// blocked crawlers from, so the block list and rate limit apply too.
+		MD4AI_Headers::enforce_access();
 
 		if ( 'index.md' === $file ) {
 			self::serve_cached( self::INDEX_TRANSIENT, array( __CLASS__, 'build_index' ), 0 );

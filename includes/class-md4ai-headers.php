@@ -55,8 +55,26 @@ class MD4AI_Headers {
 
 	/**
 	 * Sends a 403 for a blocked crawler and ends the request.
+	 *
+	 * Logged as a "blocked" row so the Analytics tab can show that the bot
+	 * reached the site but was refused, which is a different story from
+	 * "never seen".
+	 *
+	 * @param int $post_id Post the request targeted, 0 for endpoint fetches.
 	 */
-	public static function send_forbidden(): void {
+	public static function send_forbidden( int $post_id = 0 ): void {
+		MD4AI_Logger::record(
+			array(
+				'post_id'      => $post_id,
+				'url'          => md4ai_current_url(),
+				'user_agent'   => md4ai_current_ua(),
+				'bot_name'     => MD4AI_Detector::bot_name(),
+				'bytes_served' => 0,
+				'cache_hit'    => false,
+				'served'       => MD4AI_Logger::SERVED_BLOCKED,
+			)
+		);
+
 		status_header( 403 );
 		header( 'Content-Type: text/plain; charset=utf-8' );
 		header( 'X-Robots-Tag: noindex' );
@@ -65,6 +83,49 @@ class MD4AI_Headers {
 		header( 'Cache-Control: private' );
 		echo "403 Forbidden\n";
 		exit;
+	}
+
+	/**
+	 * Sends a 429 for a throttled crawler and ends the request.
+	 *
+	 * @param int $post_id Post the request targeted, 0 for endpoint fetches.
+	 */
+	public static function send_too_many_requests( int $post_id = 0 ): void {
+		MD4AI_Logger::record(
+			array(
+				'post_id'      => $post_id,
+				'url'          => md4ai_current_url(),
+				'user_agent'   => md4ai_current_ua(),
+				'bot_name'     => MD4AI_Detector::bot_name(),
+				'bytes_served' => 0,
+				'cache_hit'    => false,
+				'served'       => MD4AI_Logger::SERVED_THROTTLED,
+			)
+		);
+
+		status_header( 429 );
+		header( 'Content-Type: text/plain; charset=utf-8' );
+		header( 'Retry-After: ' . MD4AI_Rate_Limiter::retry_after() );
+		header( 'X-Robots-Tag: noindex' );
+		header( 'Cache-Control: private' );
+		echo "429 Too Many Requests\n";
+		exit;
+	}
+
+	/**
+	 * Applies the Blocked Bots list and the rate limit to the current request,
+	 * ending it with a 403 or 429 when either says so. The block wins: a
+	 * refused crawler should not also be counted against a quota.
+	 *
+	 * @param int $post_id Post the request targeted, 0 for endpoint fetches.
+	 */
+	public static function enforce_access( int $post_id = 0 ): void {
+		if ( MD4AI_Detector::is_blocked_request() ) {
+			self::send_forbidden( $post_id );
+		}
+		if ( MD4AI_Rate_Limiter::is_throttled() ) {
+			self::send_too_many_requests( $post_id );
+		}
 	}
 
 	/**

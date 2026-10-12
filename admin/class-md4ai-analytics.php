@@ -61,12 +61,77 @@ class MD4AI_Analytics {
 		);
 		echo '</p>';
 
+		$bots = MD4AI_Stats::top_bots( 30, 500 );
+		self::render_kpis( MD4AI_Bots::summarize( $bots ) );
 		self::render_bot_chart();
-		self::render_bot_table( MD4AI_Stats::top_bots( 30, 50 ) );
+		self::render_reachability_table( MD4AI_Stats::bot_reachability( 30 ) );
+		self::render_bot_table( array_slice( $bots, 0, 50 ) );
 		self::render_post_table( MD4AI_Stats::top_posts( 30, 50 ) );
 		self::render_url_table( MD4AI_Stats::top_urls( 30, 50 ) );
 		self::render_unknown_ua_table( MD4AI_Stats::unknown_uas( 30, 50 ) );
 		self::render_export_form();
+	}
+
+	/**
+	 * Renders the "who is reading" KPI cards and the platform / purpose
+	 * breakdowns derived from the bot taxonomy.
+	 *
+	 * @param array{chat_impressions:int, distinct_crawlers:int, by_company:array<string,int>, by_purpose:array<string,int>} $summary Output of MD4AI_Bots::summarize().
+	 */
+	private static function render_kpis( array $summary ): void {
+		echo '<h2>' . esc_html__( 'Who is reading (30 days)', 'parseless' ) . '</h2>';
+		if ( empty( $summary['by_purpose'] ) ) {
+			echo '<p>' . esc_html__( 'No crawler traffic recorded yet.', 'parseless' ) . '</p>';
+			return;
+		}
+
+		echo '<div class="md4ai-kpis" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;">';
+		self::render_kpi_card( __( 'Chat impressions', 'parseless' ), (int) $summary['chat_impressions'], __( 'Pages fetched live while an AI assistant answered someone.', 'parseless' ) );
+		self::render_kpi_card( __( 'Distinct crawlers', 'parseless' ), (int) $summary['distinct_crawlers'], __( 'Known AI bots seen at least once.', 'parseless' ) );
+		echo '</div>';
+
+		echo '<div style="display:flex;gap:32px;flex-wrap:wrap;">';
+		self::render_breakdown_table( __( 'By company', 'parseless' ), $summary['by_company'] );
+
+		$purposes = array();
+		foreach ( MD4AI_Bots::purpose_labels() as $purpose => $label ) {
+			if ( isset( $summary['by_purpose'][ $purpose ] ) ) {
+				$purposes[ $label ] = (int) $summary['by_purpose'][ $purpose ];
+			}
+		}
+		self::render_breakdown_table( __( 'By purpose', 'parseless' ), $purposes );
+		echo '</div>';
+	}
+
+	/**
+	 * Renders one KPI card.
+	 *
+	 * @param string $label Card title.
+	 * @param int    $value Metric.
+	 * @param string $hint  One-line explanation.
+	 */
+	private static function render_kpi_card( string $label, int $value, string $hint ): void {
+		echo '<div class="md4ai-kpi" style="flex:1 1 200px;max-width:280px;padding:12px 16px;background:#fff;border:1px solid #c3c4c7;border-radius:4px;">';
+		echo '<div style="font-size:28px;font-weight:600;line-height:1.2;">' . esc_html( number_format_i18n( $value ) ) . '</div>';
+		echo '<div style="font-weight:600;">' . esc_html( $label ) . '</div>';
+		echo '<div class="description">' . esc_html( $hint ) . '</div>';
+		echo '</div>';
+	}
+
+	/**
+	 * Renders a two-column label / requests table.
+	 *
+	 * @param string             $title Table heading.
+	 * @param array<string, int> $rows  Label => hits, already in display order.
+	 */
+	private static function render_breakdown_table( string $title, array $rows ): void {
+		echo '<div style="flex:1 1 280px;max-width:420px;">';
+		echo '<h3>' . esc_html( $title ) . '</h3>';
+		echo '<table class="widefat striped"><tbody>';
+		foreach ( $rows as $label => $hits ) {
+			echo '<tr><td>' . esc_html( (string) $label ) . '</td><td style="text-align:right;">' . (int) $hits . '</td></tr>';
+		}
+		echo '</tbody></table></div>';
 	}
 
 	/**
@@ -86,6 +151,47 @@ class MD4AI_Analytics {
 	}
 
 	/**
+	 * Renders the known-bot reachability table: every crawler on the list,
+	 * when it was last seen, and what it received.
+	 *
+	 * @param array<int, array{bot_name:string,last_seen:string,markdown:int,html:int,blocked:int,throttled:int}> $rows Rows from MD4AI_Stats::bot_reachability().
+	 */
+	private static function render_reachability_table( array $rows ): void {
+		echo '<h2>' . esc_html__( 'Known bots — reachability (30 days)', 'parseless' ) . '</h2>';
+		if ( ! md4ai_get_setting( 'log_all_bot_traffic' ) ) {
+			echo '<p class="description">' . esc_html__( 'Only Markdown fetches are recorded. Enable "Log All AI Crawler Traffic" under Settings to also see crawlers that receive the normal HTML page.', 'parseless' ) . '</p>';
+		}
+		if ( empty( $rows ) ) {
+			echo '<p>' . esc_html__( 'The bot list is empty.', 'parseless' ) . '</p>';
+			return;
+		}
+		echo '<table class="widefat striped"><thead><tr>';
+		echo '<th>' . esc_html__( 'Bot', 'parseless' ) . '</th>';
+		echo '<th>' . esc_html__( 'Last seen', 'parseless' ) . '</th>';
+		echo '<th>' . esc_html__( 'Markdown', 'parseless' ) . '</th>';
+		echo '<th>' . esc_html__( 'HTML', 'parseless' ) . '</th>';
+		echo '<th>' . esc_html__( 'Blocked', 'parseless' ) . '</th>';
+		echo '<th>' . esc_html__( 'Throttled', 'parseless' ) . '</th>';
+		echo '</tr></thead><tbody>';
+		foreach ( $rows as $row ) {
+			echo '<tr>';
+			echo '<td>' . esc_html( $row['bot_name'] ) . '</td>';
+			if ( '' === $row['last_seen'] ) {
+				echo '<td><em>' . esc_html__( 'Never seen', 'parseless' ) . '</em></td>';
+			} else {
+				echo '<td>' . esc_html( $row['last_seen'] ) . '</td>';
+			}
+			echo '<td>' . (int) $row['markdown'] . '</td>';
+			echo '<td>' . (int) $row['html'] . '</td>';
+			echo '<td>' . (int) $row['blocked'] . '</td>';
+			echo '<td>' . (int) $row['throttled'] . '</td>';
+			echo '</tr>';
+		}
+		echo '</tbody></table>';
+		echo '<p class="description">' . esc_html__( 'A bot that is never seen, or only ever blocked or throttled, may be stopped by your host or CDN before it reaches WordPress. Pages served from a full-page cache are not recorded.', 'parseless' ) . '</p>';
+	}
+
+	/**
 	 * Renders the per-bot breakdown table.
 	 *
 	 * @param array<int, array{bot_name:string,hits:int,last_seen:string}> $rows Aggregated bot rows.
@@ -98,12 +204,17 @@ class MD4AI_Analytics {
 		}
 		echo '<table class="widefat striped"><thead><tr>';
 		echo '<th>' . esc_html__( 'Bot', 'parseless' ) . '</th>';
+		echo '<th>' . esc_html__( 'Company', 'parseless' ) . '</th>';
+		echo '<th>' . esc_html__( 'Purpose', 'parseless' ) . '</th>';
 		echo '<th>' . esc_html__( 'Requests', 'parseless' ) . '</th>';
 		echo '<th>' . esc_html__( 'Last seen', 'parseless' ) . '</th>';
 		echo '</tr></thead><tbody>';
 		foreach ( $rows as $row ) {
+			$info = MD4AI_Bots::info( (string) $row['bot_name'] );
 			echo '<tr>';
 			echo '<td>' . esc_html( $row['bot_name'] ) . '</td>';
+			echo '<td>' . esc_html( '' !== $info['company'] ? $info['company'] : '—' ) . '</td>';
+			echo '<td>' . esc_html( MD4AI_Bots::purpose_label( $info['purpose'] ) ) . '</td>';
 			echo '<td>' . (int) $row['hits'] . '</td>';
 			echo '<td>' . esc_html( $row['last_seen'] ) . '</td>';
 			echo '</tr>';
@@ -416,7 +527,7 @@ class MD4AI_Analytics {
 		header( 'Content-Disposition: attachment; filename="parseless-requests-' . gmdate( 'Y-m-d' ) . '.csv"' );
 
 		$out = fopen( 'php://output', 'w' );
-		fputcsv( $out, array( 'created_at', 'post_id', 'url', 'user_agent', 'bot_name', 'bytes_served', 'cache_hit' ), ',', '"', '' );
+		fputcsv( $out, array( 'created_at', 'post_id', 'url', 'user_agent', 'bot_name', 'bytes_served', 'cache_hit', 'served' ), ',', '"', '' );
 		foreach ( $rows as $row ) {
 			fputcsv(
 				$out,
@@ -428,6 +539,7 @@ class MD4AI_Analytics {
 					self::csv_safe( (string) $row['bot_name'] ),
 					(int) $row['bytes_served'],
 					(int) $row['cache_hit'],
+					self::csv_safe( (string) ( $row['served'] ?? '' ) ),
 				),
 				',',
 				'"',

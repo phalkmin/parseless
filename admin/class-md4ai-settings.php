@@ -84,6 +84,8 @@ class MD4AI_Settings {
 			'query_param_name'            => $query_param_name,
 			'bot_list'                    => sanitize_textarea_field( wp_unslash( $_POST['bot_list'] ?? '' ) ),
 			'blocked_bots'                => sanitize_textarea_field( wp_unslash( $_POST['blocked_bots'] ?? '' ) ),
+			'rate_limit_enabled'          => isset( $_POST['rate_limit_enabled'] ),
+			'rate_limit_per_minute'       => isset( $_POST['rate_limit_per_minute'] ) ? max( 1, min( 10000, absint( wp_unslash( $_POST['rate_limit_per_minute'] ) ) ) ) : $defaults['rate_limit_per_minute'],
 			'cache_ttl'                   => in_array( $cache_ttl, array( HOUR_IN_SECONDS, 6 * HOUR_IN_SECONDS, DAY_IN_SECONDS, WEEK_IN_SECONDS ), true )
 					? $cache_ttl
 					: $defaults['cache_ttl'],
@@ -108,6 +110,7 @@ class MD4AI_Settings {
 				? $retention_days
 				: $defaults['log_retention_days'],
 			'log_unknown_uas'             => isset( $_POST['log_unknown_uas'] ),
+			'log_all_bot_traffic'         => isset( $_POST['log_all_bot_traffic'] ),
 			'accept_negotiation'          => isset( $_POST['accept_negotiation'] ),
 			'md_suffix_enabled'           => isset( $_POST['md_suffix_enabled'] ),
 			'link_header_enabled'         => isset( $_POST['link_header_enabled'] ),
@@ -247,6 +250,18 @@ class MD4AI_Settings {
 					<td>
 						<textarea id="md4ai_blocked_bots" name="blocked_bots" rows="5" class="large-text code"><?php echo esc_textarea( $s['blocked_bots'] ); ?></textarea>
 						<p class="description"><?php esc_html_e( 'One User-Agent substring per line. Matching crawlers get a 403 instead of Markdown. Empty by default — blocks nothing. Does not affect normal HTML browsing.', 'parseless' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="md4ai_rate_limit_per_minute"><?php esc_html_e( 'Rate Limit', 'parseless' ); ?></label></th>
+					<td>
+						<label>
+							<input type="checkbox" name="rate_limit_enabled" value="1" <?php checked( (bool) $s['rate_limit_enabled'] ); ?>>
+							<?php esc_html_e( 'Throttle each AI crawler to at most', 'parseless' ); ?>
+						</label>
+						<input type="number" id="md4ai_rate_limit_per_minute" name="rate_limit_per_minute" min="1" max="10000" step="1" class="small-text" value="<?php echo esc_attr( (string) $s['rate_limit_per_minute'] ); ?>">
+						<?php esc_html_e( 'requests per minute', 'parseless' ); ?>
+						<p class="description"><?php esc_html_e( 'Off by default. Applies to known bots on Markdown, llms-full.txt and the OKF bundle; over the limit they get a 429 with a Retry-After header. Never applies to people using ?format=md, and never to normal HTML browsing.', 'parseless' ); ?></p>
 					</td>
 				</tr>
 				<tr>
@@ -581,6 +596,16 @@ class MD4AI_Settings {
 							<input type="checkbox" name="log_unknown_uas" value="1" <?php checked( (bool) $s['log_unknown_uas'] ); ?>>
 							<?php esc_html_e( 'Record bot-like User-Agents that did not match the configured list', 'parseless' ); ?>
 						</label>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><?php esc_html_e( 'Log All AI Crawler Traffic', 'parseless' ); ?></th>
+					<td>
+						<label>
+							<input type="checkbox" name="log_all_bot_traffic" value="1" <?php checked( (bool) $s['log_all_bot_traffic'] ); ?>>
+							<?php esc_html_e( 'Also record known AI crawlers when they receive the normal HTML page', 'parseless' ); ?>
+						</label>
+						<p class="description"><?php esc_html_e( 'Shows which AI bots actually reach your site and when each was last seen — useful for spotting a host that blocks them before WordPress runs. Pages served by a full-page cache or CDN never reach PHP and cannot be recorded.', 'parseless' ); ?></p>
 					</td>
 				</tr>
 				<tr>

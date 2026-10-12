@@ -1,12 +1,12 @@
 <?php
 /**
  * Plugin Name:       ParseLess
- * Plugin URI:        https://github.com/phalkmin/parseless
- * Description:       Serves WordPress content as Markdown to AI crawlers and on ?format=md requests. Also exposes /llms.txt.
- * Version:           0.9.0
+ * Plugin URI:        https://phalkmin.me/en/parseless-wordpress-plugin/
+ * Description:       Serves WordPress content as clean Markdown to AI crawlers and agents, shows which bots really read it, and lets you cap what they cost. Also exposes /llms.txt.
+ * Version:           1.0.0
  * Requires at least: 6.8
  * Requires PHP:      8.2
- * Author:            Paulo Halkmin
+ * Author:            Paulo H. Alkmin
  * Author URI:        https://phalkmin.me/
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MD4AI_VERSION', '0.9.0' );
+define( 'MD4AI_VERSION', '1.0.0' );
 define( 'MD4AI_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MD4AI_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
@@ -98,6 +98,7 @@ add_action( 'plugins_loaded', array( 'MD4AI_Sitemap', 'init' ) );
 add_action( 'plugins_loaded', array( 'MD4AI_Robots', 'init' ) );
 add_action( 'plugins_loaded', array( 'MD4AI_RSL', 'init' ) );
 add_action( 'plugins_loaded', array( 'MD4AI_WooCommerce', 'init' ) );
+add_action( 'plugins_loaded', array( 'MD4AI_Abilities', 'init' ) );
 
 if ( is_admin() ) {
 	add_action( 'plugins_loaded', array( 'MD4AI_Settings', 'init' ) );
@@ -126,7 +127,7 @@ add_action( 'plugins_loaded', array( 'MD4AI_Retention', 'init' ) );
 add_action(
 	'plugins_loaded',
 	static function (): void {
-		if ( get_option( 'md4ai_db_version' ) !== '1' ) {
+		if ( get_option( 'md4ai_db_version' ) !== MD4AI_Logger::DB_VERSION ) {
 			MD4AI_Logger::install();
 		}
 	}

@@ -4,19 +4,25 @@ Tags: ai, markdown, llms, bots, crawlers
 Requires at least: 6.8
 Tested up to: 7.0
 Requires PHP: 8.2
-Stable tag: 0.9.0
+Stable tag: 1.0.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Serve your posts as Markdown to AI crawlers and CLI tools — typically 95%+ less bandwidth, ~60–80% fewer DB queries, no theme bloat.
+Serve AI the good version of your content, see which bots really read it, and cap what they cost you. Markdown for crawlers and agents — 95%+ less bandwidth.
 
 == Description ==
 
-ParseLess serves your WordPress content as clean Markdown to AI crawlers (via User-Agent detection) and on manual `?format=md` requests. Same URL, same content, none of the theme chrome, navigation, widgets, or page-builder scaffolding that AI bots and CLI tools don't need.
+ParseLess serves your WordPress content as clean Markdown to AI crawlers and agents — same URL, same content, none of the theme chrome, navigation, widgets or page-builder scaffolding a bot discards anyway. A typical post goes from ~80 KB of HTML to ~4 KB of Markdown, with 60–80% fewer database queries per request.
 
-It also exposes `/llms.txt` for the emerging AI-indexing standard, so models know where to find your content.
+**Serve the good version.** Your CDN may offer "Markdown for agents" now, but it converts the *rendered page* — menus, search buttons, cookie banners and all. ParseLess converts your post content, so an agent gets your article, not your layout. Agents can ask for it the standard way (`Accept: text/markdown`, a `.md` address, or `?format=md`), and every page advertises where to find it. WooCommerce products come with price, stock and variations.
 
-Agents can request Markdown the standard way — an `Accept: text/markdown` header, or a `.md` address — and every page advertises its Markdown version so they can discover it without being told. You can also declare in robots.txt how AI systems may use your content: search, generated answers, and model training, each independently, with optional RSL licence terms.
+**See who's really reading.** Optional request logging shows which AI companies fetch your content and why — model training, search indexing, live answers while someone chats with an assistant — with a per-bot "last seen" so you can tell when your host is quietly blocking a crawler at the edge. Everything stays in your database; IPs are only ever stored as salted hashes.
+
+**Cap what it costs you.** Block specific crawlers from your Markdown, declare your terms in robots.txt (Content Signals, AI bot rules, RSL licence), and — if a bot ignores all that — throttle it to a sensible number of requests per minute. Every control is off by default: your stance on AI is yours, not ours.
+
+**Agent-native.** On WordPress 6.9+ ParseLess registers Abilities (`parseless/get-markdown`, `parseless/list-markdown-urls`, `parseless/get-stats`) so MCP clients and AI agents can discover and fetch your Markdown through the WordPress Abilities API instead of guessing URLs.
+
+It also publishes `/llms.txt` and `/llms-full.txt` for AI indexers, and an experimental Open Knowledge Format bundle.
 
 = Who is this for? =
 
@@ -56,18 +62,54 @@ Numbers vary by theme and content. Heavier setups (Elementor, Divi, Avada) see t
 
 = Features =
 
-* Automatic Markdown for known AI bots (GPTBot, ClaudeBot, PerplexityBot, OAI-SearchBot, CCBot, Google-Extended, Applebot-Extended, Bytespider, Meta-ExternalAgent, cohere-ai, and more)
-* Manual preview and CLI access via `?format=md` on any post URL
-* `/llms.txt` endpoint for AI-indexing standards
-* Respects noindex flags from Yoast SEO, Rank Math, and Genesis
-* Skips private, draft, password-protected, and trashed posts
-* Works with all public post types (configurable)
-* Optional YAML frontmatter (title, URL, author, date, categories, tags, excerpt)
-* Transient-based caching with configurable TTL
-* Settings page at **Tools → ParseLess** for detection mode, bot list, cache TTL, post types, and llms.txt control
-* Per-post meta box with Markdown preview and copy-to-clipboard
-* Running WooCommerce? Products are served with the fields agents ask about — price, sale price, SKU, stock, categories, attributes and variations — as structured Markdown, and marked as products in your OKF bundle. Cart and checkout pages are excluded automatically.
-* Extensible via filters: `md4ai_bot_list`, `md4ai_blocked_bots`, `md4ai_supported_post_types`, `md4ai_excluded_post_types`, `md4ai_excluded_post_ids`, `md4ai_markdown_output`, `md4ai_product_details`, `md4ai_max_variations`, `md4ai_cache_ttl`, `md4ai_should_serve_markdown`, `md4ai_llmstxt_max_posts`, `md4ai_llmsfull_max_bytes`, `md4ai_sitemap_max_posts`, `md4ai_okf_endpoint`, `md4ai_okf_concept`, `md4ai_okf_max_posts`, `md4ai_rsl_terms_url`, `md4ai_rsl_xml`, `md4ai_log_request`
+* Automatic Markdown for known AI bots (GPTBot, ClaudeBot, PerplexityBot, OAI-SearchBot, CCBot, Google-Extended, Applebot-Extended, Bytespider, Meta-ExternalAgent, Amazonbot, cohere-ai, and more), plus `Accept: text/markdown`, `.md` addresses and `?format=md`
+* Respects noindex flags from Yoast SEO, Rank Math, and Genesis; skips private, draft, password-protected and trashed posts; per-post "Exclude from AI" checkbox
+* Works with all public post types (configurable); WooCommerce products include price, SKU, stock, attributes and variations
+* Optional YAML frontmatter and schema.org Article block
+* Analytics: requests per bot, company and purpose; chat impressions; top URLs; unknown bot-like User-Agents with one-click "add to list"; per-bot reachability with last seen; CSV export. Optional site-wide crawler logging to see bots that get HTML too.
+* Controls: Blocked Bots (403), per-bot rate limit (429 + `Retry-After`), Content Signals, AI bot rules and RSL licence in robots.txt — all off by default
+* Abilities API registration for MCP clients on WordPress 6.9+
+* `/llms.txt`, `/llms-full.txt`, an AI sitemap advertised in robots.txt, and an experimental OKF bundle
+* Settings page at **Tools → ParseLess**; per-post meta box with Markdown preview, copy-to-clipboard and the exclude toggle
+* Zero dependencies, no build step, nothing phones home
+
+= For developers =
+
+The public API below is frozen for the 1.x series: names, arguments and return types will not change without a major version bump.
+
+**Filters**
+
+* `md4ai_should_serve_markdown( bool $serve )` — final say on whether the current request gets Markdown.
+* `md4ai_bot_list( string[] $bots )` — User-Agent substrings treated as AI crawlers.
+* `md4ai_blocked_bots( string[] $bots )` — User-Agent substrings refused with a 403.
+* `md4ai_bot_taxonomy( array $map )` — `bot_name => [ company, purpose ]`; purposes are `training`, `search`, `live`, `agent`.
+* `md4ai_rate_limit( int $per_minute, string $bot )` — per-bot request cap when rate limiting is on; return 0 to exempt a bot.
+* `md4ai_unknown_ua_tokens( string[] $tokens )` — substrings that make an unlisted User-Agent "bot-like" for the unknown-UA log.
+* `md4ai_supported_post_types( string[] $types )` — post types served as Markdown.
+* `md4ai_excluded_post_types( string[] $types )` — public post types never served (page-builder templates and the like).
+* `md4ai_excluded_post_ids( int[] $ids )` — individual posts never served on any endpoint.
+* `md4ai_markdown_output( string $markdown, WP_Post $post )` — the finished Markdown document.
+* `md4ai_product_details( string $table, WC_Product $product )` — the WooCommerce product details section.
+* `md4ai_max_variations( int $max )` — cap on listed variations (default 25).
+* `md4ai_cache_ttl( int $seconds, int $post_id )` — cache lifetime; `$post_id` is 0 for site-wide documents.
+* `md4ai_cache_bypass( bool $bypass )` — skip the cache for this request (default: logged-in users).
+* `md4ai_llmstxt_max_posts( int $max )`, `md4ai_llmsfull_max_bytes( int $bytes )`, `md4ai_sitemap_max_posts( int $max )`, `md4ai_okf_max_posts( int $max )` — endpoint size caps.
+* `md4ai_okf_endpoint( string $slug )` — path segment of the OKF bundle.
+* `md4ai_okf_concept( string $markdown, WP_Post $post )` — one OKF concept file.
+* `md4ai_rsl_terms_url( string $url )`, `md4ai_rsl_xml( string $xml )` — the RSL licence document.
+* `md4ai_log_request( bool $log, array $context )` — veto a log row before it is written.
+
+**Actions**
+
+* `md4ai_logged_request( int $row_id, array $context )` — after a request row is written.
+
+**Abilities** (WordPress 6.9+, via `wp_register_ability()`)
+
+* `parseless/get-markdown` — input `post_id` or `url`; returns `post_id`, `url`, `title`, `markdown`, `tokens`.
+* `parseless/list-markdown-urls` — input `limit` (capped by the llms.txt Max Posts setting); returns `post_id`, `title`, `url`, `markdown_url`, `modified` per post.
+* `parseless/get-stats` — input `days` (1–365); returns totals, cache hit rate, chat impressions, distinct crawlers and top bots. Requires `manage_options`.
+
+**Storage**: one option, `md4ai_settings`; one table, `{prefix}md4ai_requests` (only when logging is on); post meta `_md4ai_exclude`; transients prefixed `md4ai_`. Uninstall removes all of them.
 
 == Installation ==
 
@@ -89,11 +131,21 @@ No. Markdown is only served when the request matches a known AI bot User-Agent o
 
 = Which AI bots are detected? =
 
-GPTBot, ChatGPT-User, OAI-SearchBot, ClaudeBot, Claude-User, anthropic-ai, PerplexityBot, Perplexity-User, CCBot, Google-Extended, Applebot-Extended, Bytespider, Meta-ExternalAgent, cohere-ai. You can extend, replace, or restrict this list in the settings or via the `md4ai_bot_list` filter.
+GPTBot, ChatGPT-User, OAI-SearchBot, ClaudeBot, Claude-User, Claude-SearchBot, anthropic-ai, PerplexityBot, Perplexity-User, CCBot, Google-Extended, Applebot-Extended, Bytespider, Meta-ExternalAgent, Meta-ExternalFetcher, cohere-ai, Amazonbot, DuckAssistBot, MistralAI-User. You can extend, replace, or restrict this list in the settings or via the `md4ai_bot_list` filter. The Analytics tab also surfaces bot-like User-Agents that didn't match, with a one-click "add to list".
 
 = Does this block AI bots? =
 
-No — the opposite. ParseLess makes your content *easier* for AI bots to ingest, so you keep the AEO (Answer Engine Optimization) benefit of being cited by ChatGPT, Claude, Perplexity, and AI Overviews. It just delivers that content in a format that's cheap for both you and them.
+Not by default — the opposite. ParseLess makes your content *easier* for AI bots to ingest, so you keep the AEO (Answer Engine Optimization) benefit of being cited by ChatGPT, Claude, Perplexity, and AI Overviews. It just delivers that content in a format that's cheap for both you and them.
+
+If you *want* to push back on specific crawlers, you can: the Blocked Bots list refuses them with a 403, the rate limit throttles any bot that exceeds a per-minute cap with a 429, and robots.txt can carry Content Signals, AI bot rules and an RSL licence. All of that is off until you turn it on.
+
+= My host says it blocks AI bots. How do I check? =
+
+Enable logging and "Log All AI Crawler Traffic" under Tools → ParseLess, wait a few days, and look at the "Known bots — reachability" table on the Analytics tab. A crawler that is on your list but never seen — or only ever seen blocked or throttled — is being stopped before it reaches WordPress. Pages served from a full-page cache or CDN never reach PHP, so those visits are invisible to any plugin.
+
+= Can bots fake their User-Agent? =
+
+Yes. Anyone can send a request claiming to be GPTBot, and ParseLess currently trusts that label, so bot counts in Analytics can be inflated and a block or rate limit applies to whoever claims the name. Verifying crawlers against the IP ranges their operators publish is planned for a 1.x release.
 
 = How much will this actually reduce my server load? =
 
@@ -116,6 +168,12 @@ each Markdown request:
 * The full User-Agent header
 * A salted SHA-256 hash of the requester's IP address (the raw IP is never stored)
 * Matched bot identifier, bytes served, and whether the response came from cache
+* What the request received: Markdown, the normal HTML page, a block (403) or
+  a throttle (429)
+
+HTML page views are only recorded when "Log All AI Crawler Traffic" is also
+enabled (off by default), and only for User-Agents on your bot list. Human
+visitors are never logged.
 
 IP hashes cannot be reversed from an email address, so the WordPress privacy
 exporter/eraser tools will report no personal data on demand.
@@ -125,6 +183,30 @@ Logs are pruned daily according to the configured retention window
 "Delete all logged requests" at any time from Tools → ParseLess.
 
 == Changelog ==
+
+= 1.0.0 =
+
+**Know your bots**
+
+* New: the Analytics tab now tells you *who* is reading and *why*. Every known crawler is labelled with its company (OpenAI, Anthropic, Perplexity, Google, Meta…) and purpose — model training, search indexing, live answers, or coding agents — with breakdowns by both. The headline number is "chat impressions": how often your page was fetched live while someone was talking to an AI assistant.
+* New: "Log All AI Crawler Traffic" (off by default) records known AI bots even when they receive your normal HTML page, not just when they get Markdown. With it on, a new "Known bots — reachability" table shows every crawler on your list with when it was last seen and what it received. A bot that is never seen is the tell-tale sign that your host or CDN is blocking it before it reaches WordPress.
+* New: blocked (403) and throttled (429) requests are now logged alongside served ones, and the CSV export gains a "served" column.
+* Improved: five more crawlers recognised out of the box — Claude-SearchBot, Meta-ExternalFetcher, Amazonbot, DuckAssistBot and MistralAI-User.
+
+**Control the cost**
+
+* New: per-bot rate limiting (off by default). Turn it on under Tools → ParseLess and each AI crawler is capped at a number of requests per minute (60 by default); over the limit it receives a 429 with a Retry-After header. Applies to Markdown, llms-full.txt and the OKF bundle. People using ?format=md and normal HTML browsing are never throttled.
+* New: an "Exclude from AI" checkbox in the ParseLess box on every post and page. Ticked, the post disappears from the Markdown endpoint, llms.txt, the AI sitemap and the OKF bundle — for pages you'd rather AI systems didn't read.
+
+**Agent-native**
+
+* New: on WordPress 6.9 and later, ParseLess registers three Abilities — get a post as Markdown, list the Markdown URLs, and (for administrators) read crawler stats — so MCP clients and AI agents can use your content through the WordPress Abilities API instead of sniffing User-Agents.
+* Improved: the public API — every filter, action and ability — is documented under "For developers" and frozen for the 1.x series.
+* Fixed: uninstalling on a site with Redis or Memcached left cached Markdown behind in the object cache. Uninstall now clears it there too.
+
+**Not in this release**
+
+* Verifying that a crawler really is who it claims to be, against the IP ranges AI companies publish, is planned for a 1.x update. Until then, bot counts trust the User-Agent header.
 
 = 0.9.0 =
 * New: WooCommerce products now include the details an AI agent actually needs — price, sale price, SKU, stock status and quantity, categories, and attributes — as a clean table. Until now a product was served as a title and a paragraph, so an agent asked "what does this cost and can I buy it" had nothing to work with.

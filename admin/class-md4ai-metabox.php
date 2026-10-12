@@ -21,6 +21,33 @@ class MD4AI_Metabox {
 		add_action( 'add_meta_boxes', array( __CLASS__, 'register' ) );
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_assets' ) );
 		add_action( 'wp_ajax_md4ai_preview_markdown', array( __CLASS__, 'ajax_preview' ) );
+		add_action( 'save_post', array( __CLASS__, 'save_exclude_flag' ) );
+	}
+
+	/**
+	 * Persists the "Exclude from AI" checkbox.
+	 *
+	 * The meta key is in NOINDEX_META_KEYS, so the write itself triggers the
+	 * cache clear in MD4AI::on_post_meta_change(); nothing to do here.
+	 *
+	 * @param int $post_id Post ID.
+	 */
+	public static function save_exclude_flag( int $post_id ): void {
+		if ( ! isset( $_POST['md4ai_exclude_nonce'] ) ) {
+			return;
+		}
+		if ( ! wp_verify_nonce( sanitize_key( $_POST['md4ai_exclude_nonce'] ), 'md4ai_exclude_' . $post_id ) ) {
+			return;
+		}
+		if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) || ! current_user_can( 'edit_post', $post_id ) ) {
+			return;
+		}
+
+		if ( isset( $_POST['md4ai_exclude'] ) ) {
+			update_post_meta( $post_id, MD4AI_Detector::EXCLUDE_META_KEY, '1' );
+		} else {
+			delete_post_meta( $post_id, MD4AI_Detector::EXCLUDE_META_KEY );
+		}
 	}
 
 	/**
@@ -80,6 +107,14 @@ class MD4AI_Metabox {
 		$preview = self::build_preview( $post );
 		$nonce   = wp_create_nonce( 'md4ai_preview_' . $post->ID );
 		?>
+		<p>
+			<?php wp_nonce_field( 'md4ai_exclude_' . $post->ID, 'md4ai_exclude_nonce' ); ?>
+			<label>
+				<input type="checkbox" name="md4ai_exclude" value="1" <?php checked( MD4AI_Detector::is_excluded( $post->ID ) ); ?>>
+				<?php esc_html_e( 'Exclude from AI', 'parseless' ); ?>
+			</label>
+			<span class="description"><?php esc_html_e( 'Hide this post from the Markdown endpoint, llms.txt, the sitemap and the OKF bundle.', 'parseless' ); ?></span>
+		</p>
 		<?php if ( '' !== $md_url ) : ?>
 		<p>
 			<a href="<?php echo esc_url( $md_url ); ?>" target="_blank" rel="noopener" class="button button-secondary">

@@ -30,11 +30,9 @@ class MD4AI_LLMsTxt {
 		if ( 'llms.txt' === $path ) {
 			self::serve( self::TRANSIENT_KEY, self::build( ... ) );
 		} elseif ( 'llms-full.txt' === $path ) {
-			// Full content, so the Blocked Bots list applies as it does on the
-			// Markdown endpoint; the llms.txt index stays open to everyone.
-			if ( MD4AI_Detector::is_blocked_request() ) {
-				MD4AI_Headers::send_forbidden();
-			}
+			// Full content, so the Blocked Bots list and rate limit apply as
+			// on the Markdown endpoint; the llms.txt index stays open.
+			MD4AI_Headers::enforce_access();
 			// The block makes this URL vary by User-Agent, so a shared cache
 			// keyed on URL alone must not store it (llms.txt stays cacheable).
 			header( 'Cache-Control: private' );
@@ -138,7 +136,7 @@ class MD4AI_LLMsTxt {
 	 *
 	 * @return WP_Post[]
 	 */
-	private static function get_listed_posts(): array {
+	public static function get_listed_posts(): array {
 		$post_types = md4ai_enabled_post_types();
 		if ( empty( $post_types ) ) {
 			return array();

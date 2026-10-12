@@ -36,28 +36,31 @@ class MD4AI {
 		$should_serve = apply_filters( 'md4ai_should_serve_markdown', MD4AI_Detector::should_serve() );
 		if ( ! $should_serve ) {
 			self::maybe_log_unknown_ua();
+			self::maybe_log_html_bot_hit();
 			return;
 		}
 
+		// Archives, the home page, unservable posts: the bot still gets HTML
+		// here, and that contact is what the reachability table counts.
 		$post_types = md4ai_enabled_post_types();
 		if ( empty( $post_types ) || ! is_singular( $post_types ) ) {
+			self::maybe_log_html_bot_hit();
 			return;
 		}
 
 		$post_id = get_queried_object_id();
 		if ( ! $post_id ) {
+			self::maybe_log_html_bot_hit();
 			return;
 		}
 
 		$post = get_post( $post_id );
 		if ( ! $post || ! MD4AI_Detector::is_post_servable( $post ) ) {
+			self::maybe_log_html_bot_hit();
 			return;
 		}
 
-		// Block configured bots from the Markdown endpoint with a 403.
-		if ( MD4AI_Detector::is_blocked_request() ) {
-			MD4AI_Headers::send_forbidden();
-		}
+		MD4AI_Headers::enforce_access( $post_id );
 
 		$cache_hit = true;
 		$markdown  = MD4AI_Cache::get( $post_id );
@@ -106,6 +109,34 @@ class MD4AI {
 				'bot_name'     => 'unknown',
 				'bytes_served' => 0,
 				'cache_hit'    => false,
+			)
+		);
+	}
+
+	/**
+	 * Logs a known crawler that is about to receive the normal HTML page.
+	 *
+	 * This is the "does GPTBot even reach me?" signal: a bot that never shows
+	 * up here, or only ever as 429s, is being stopped upstream by the host.
+	 * Cached HTML never reaches PHP, so the view is a floor, not a total.
+	 */
+	private static function maybe_log_html_bot_hit(): void {
+		if ( ! md4ai_get_setting( 'enable_logging' ) || ! md4ai_get_setting( 'log_all_bot_traffic' ) ) {
+			return;
+		}
+		if ( is_admin() || wp_doing_ajax() || ! MD4AI_Detector::is_bot_request() ) {
+			return;
+		}
+
+		MD4AI_Logger::record(
+			array(
+				'post_id'      => (int) get_queried_object_id(),
+				'url'          => md4ai_current_url(),
+				'user_agent'   => md4ai_current_ua(),
+				'bot_name'     => MD4AI_Detector::bot_name(),
+				'bytes_served' => 0,
+				'cache_hit'    => false,
+				'served'       => MD4AI_Logger::SERVED_HTML,
 			)
 		);
 	}

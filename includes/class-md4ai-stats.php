@@ -85,6 +85,85 @@ class MD4AI_Stats {
 	}
 
 	/**
+	 * Returns reachability per known bot: one row for every crawler on the
+	 * configured list, whether or not it has ever been seen, with its last
+	 * contact and a breakdown of what it received.
+	 *
+	 * A bot with no row at all — or only blocked/throttled rows — is the
+	 * owner's hint that something upstream (host, CDN) is stopping it.
+	 *
+	 * @param int $days Window length.
+	 * @return array<int, array{bot_name:string, last_seen:string, markdown:int, html:int, blocked:int, throttled:int}>
+	 */
+	public static function bot_reachability( int $days ): array {
+		global $wpdb;
+		$table = MD4AI_Logger::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT bot_name, served, COUNT(*) AS hits, MAX(created_at) AS last_seen
+				 FROM %i
+				 WHERE bot_name <> '' AND bot_name NOT IN ('manual', 'unknown')
+				   AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)
+				 GROUP BY bot_name, served",
+				$table,
+				max( 1, $days )
+			),
+			ARRAY_A
+		);
+
+		$seen = array();
+		foreach ( is_array( $rows ) ? $rows : array() as $row ) {
+			$key = strtolower( (string) $row['bot_name'] );
+			if ( ! isset( $seen[ $key ] ) ) {
+				$seen[ $key ] = self::empty_reach_row( (string) $row['bot_name'] );
+			}
+			$served = (string) $row['served'];
+			if ( isset( $seen[ $key ][ $served ] ) ) {
+				$seen[ $key ][ $served ] += (int) $row['hits'];
+			}
+			if ( strcmp( (string) $row['last_seen'], $seen[ $key ]['last_seen'] ) > 0 ) {
+				$seen[ $key ]['last_seen'] = (string) $row['last_seen'];
+			}
+		}
+
+		// Known-but-silent bots are the interesting ones; list them too.
+		$result = array();
+		foreach ( MD4AI_Detector::get_bot_list() as $bot ) {
+			$key      = strtolower( (string) $bot );
+			$result[] = $seen[ $key ] ?? self::empty_reach_row( (string) $bot );
+			unset( $seen[ $key ] );
+		}
+		// Bots seen before being removed from the list still have rows.
+		foreach ( $seen as $row ) {
+			$result[] = $row;
+		}
+
+		usort(
+			$result,
+			static fn( array $a, array $b ): int => strcmp( $b['last_seen'], $a['last_seen'] )
+		);
+		return $result;
+	}
+
+	/**
+	 * Returns a zeroed reachability row.
+	 *
+	 * @param string $bot_name Bot identifier.
+	 * @return array{bot_name:string, last_seen:string, markdown:int, html:int, blocked:int, throttled:int}
+	 */
+	private static function empty_reach_row( string $bot_name ): array {
+		return array(
+			'bot_name'  => $bot_name,
+			'last_seen' => '',
+			'markdown'  => 0,
+			'html'      => 0,
+			'blocked'   => 0,
+			'throttled' => 0,
+		);
+	}
+
+	/**
 	 * Returns the top N fetched posts over the window.
 	 *
 	 * @param int $days  Window length.
@@ -258,7 +337,7 @@ class MD4AI_Stats {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				'SELECT created_at, post_id, url, user_agent, bot_name, bytes_served, cache_hit
+				'SELECT created_at, post_id, url, user_agent, bot_name, bytes_served, cache_hit, served
 				 FROM %i
 				 WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)
 				 ORDER BY created_at DESC',

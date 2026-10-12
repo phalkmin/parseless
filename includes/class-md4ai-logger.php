@@ -14,7 +14,16 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class MD4AI_Logger {
 
-	private const DB_VERSION = '1';
+	/**
+	 * Schema version stored in the md4ai_db_version option. Bump when the
+	 * CREATE TABLE below changes; dbDelta applies the diff on plugins_loaded.
+	 */
+	public const DB_VERSION = '2';
+
+	public const SERVED_MARKDOWN  = 'markdown';
+	public const SERVED_HTML      = 'html';
+	public const SERVED_BLOCKED   = 'blocked';
+	public const SERVED_THROTTLED = 'throttled';
 
 	/**
 	 * Returns the full table name including the WordPress prefix.
@@ -44,6 +53,8 @@ class MD4AI_Logger {
 			ip_hash CHAR(64) NOT NULL DEFAULT '',
 			bytes_served INT UNSIGNED NOT NULL DEFAULT 0,
 			cache_hit TINYINT(1) NOT NULL DEFAULT 0,
+			served VARCHAR(10) NOT NULL DEFAULT 'markdown',
+			verified TINYINT(1) NULL DEFAULT NULL,
 			created_at DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
 			PRIMARY KEY  (id),
 			KEY idx_bot (bot_name, created_at),
@@ -70,7 +81,10 @@ class MD4AI_Logger {
 	/**
 	 * Writes a request row.
 	 *
-	 * @param array{post_id:int,url:string,user_agent:string,bot_name:string,bytes_served:int,cache_hit:bool} $context Request context.
+	 * `served` defaults to "markdown" so the existing call sites, which all
+	 * sit on a successful Markdown response, need no change.
+	 *
+	 * @param array{post_id:int,url:string,user_agent:string,bot_name:string,bytes_served:int,cache_hit:bool,served?:string,verified?:bool|null} $context Request context.
 	 */
 	public static function record( array $context ): void {
 		if ( ! md4ai_get_setting( 'enable_logging' ) ) {
@@ -87,7 +101,12 @@ class MD4AI_Logger {
 		$ip      = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
 		$ip_hash = '' === $ip ? '' : hash( 'sha256', $ip . wp_salt( 'auth' ) );
 
-		$row = array(
+		$served = (string) ( $context['served'] ?? self::SERVED_MARKDOWN );
+		if ( ! in_array( $served, array( self::SERVED_MARKDOWN, self::SERVED_HTML, self::SERVED_BLOCKED, self::SERVED_THROTTLED ), true ) ) {
+			$served = self::SERVED_MARKDOWN;
+		}
+
+		$row     = array(
 			'post_id'      => max( 0, (int) ( $context['post_id'] ?? 0 ) ),
 			'url'          => mb_substr( (string) ( $context['url'] ?? '' ), 0, 255 ),
 			'user_agent'   => mb_substr( (string) ( $context['user_agent'] ?? '' ), 0, 500 ),
@@ -95,15 +114,20 @@ class MD4AI_Logger {
 			'ip_hash'      => $ip_hash,
 			'bytes_served' => max( 0, (int) ( $context['bytes_served'] ?? 0 ) ),
 			'cache_hit'    => ! empty( $context['cache_hit'] ) ? 1 : 0,
+			'served'       => $served,
 			'created_at'   => current_time( 'mysql', true ),
 		);
+		$formats = array( '%d', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s' );
+
+		// NULL means "not checked"; $wpdb->insert() cannot write NULL through
+		// a format placeholder, so the column is only included when set.
+		if ( isset( $context['verified'] ) ) {
+			$row['verified'] = $context['verified'] ? 1 : 0;
+			$formats[]       = '%d';
+		}
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-		$wpdb->insert(
-			self::table_name(),
-			$row,
-			array( '%d', '%s', '%s', '%s', '%s', '%d', '%d', '%s' )
-		);
+		$wpdb->insert( self::table_name(), $row, $formats );
 
 		$row_id = (int) $wpdb->insert_id;
 		if ( $row_id > 0 ) {
