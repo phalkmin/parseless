@@ -26,7 +26,7 @@ jobs:
             --no-progress
           echo "$HOME/.composer/vendor/bin" >> "$GITHUB_PATH"
       - name: WPCS check
-        run: phpcs --standard=WordPress-Extra --ignore=vendor --report-json=./phpcs.json .
+        run: phpcs --standard=WordPress-Extra --extensions=php --ignore=vendor --report-json=./phpcs.json .
       - name: Update summary
         run: |
           npm i -g github:10up/phpcs-json-to-md
