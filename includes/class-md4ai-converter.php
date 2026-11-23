@@ -10,8 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Converts HTML to Markdown using DOMDocument for correct handling of nested
- * structures (lists, tables) and Gutenberg block output.
+ * Converts HTML to Markdown via DOMDocument.
  */
 class MD4AI_Converter {
 
@@ -26,7 +25,6 @@ class MD4AI_Converter {
 			return '';
 		}
 
-		// Strip Gutenberg block comments before parsing.
 		$html = preg_replace( '/<!--\s*\/?wp:[^-]*?-->/s', '', (string) $html );
 
 		$doc = new DOMDocument( '1.0', 'UTF-8' );
@@ -42,9 +40,6 @@ class MD4AI_Converter {
 		}
 
 		$md = self::children_to_md( $body, array() );
-		// Block handlers each emit their own surrounding blank lines, so runs
-		// stack up between siblings. Fenced code tagged its own newlines (see
-		// pre_to_md) and so keeps its blank lines through the collapse.
 		$md = preg_replace( "/\n{3,}/", "\n\n", (string) $md );
 		$md = str_replace( "\0", '', (string) $md );
 
@@ -78,9 +73,7 @@ class MD4AI_Converter {
 		if ( $node instanceof DOMText ) {
 			// phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOMDocument property.
 			$text = $node->nodeValue;
-			// Replace non-breaking space with a regular space.
 			$text = str_replace( "\u{00A0}", ' ', $text );
-			// Inside code/pre, preserve all whitespace.
 			if ( ! empty( $ctx['in_code'] ) ) {
 				return $text;
 			}
@@ -119,7 +112,6 @@ class MD4AI_Converter {
 			case 'code':
 				$code_ctx = array_merge( $ctx, array( 'in_code' => true ) );
 				$code     = self::children_to_md( $node, $code_ctx );
-				// Inside <pre>, the parent handles fencing; just return raw text.
 				if ( ! empty( $ctx['in_pre'] ) ) {
 					return $code;
 				}
@@ -138,9 +130,6 @@ class MD4AI_Converter {
 
 			case 'img':
 				$src = $node->getAttribute( 'src' );
-				// Lazy-loading plugins park a placeholder in src and the real
-				// URL in a data attribute; a data: URI placeholder without a
-				// recoverable URL is dropped rather than emitted as garbage.
 				if ( '' === $src || 0 === strpos( $src, 'data:' ) ) {
 					foreach ( array( 'data-src', 'data-lazy-src' ) as $lazy_attr ) {
 						$lazy = $node->getAttribute( $lazy_attr );
@@ -175,8 +164,6 @@ class MD4AI_Converter {
 			case 'table':
 				return self::table_to_md( $node, $ctx );
 
-			// Non-content elements: drop entirely so their source text never
-			// leaks into the Markdown body.
 			case 'script':
 			case 'style':
 			case 'noscript':
@@ -185,7 +172,6 @@ class MD4AI_Converter {
 			case 'iframe':
 				return '';
 
-			// Pass-through: render children without adding markup.
 			default:
 				return self::children_to_md( $node, $ctx );
 		}
@@ -207,8 +193,6 @@ class MD4AI_Converter {
 			if ( preg_match( '/(?:^|\s)language-(\w+)/', $code_el->getAttribute( 'class' ), $m ) ) {
 				$lang = $m[1];
 			}
-			// Pretty-printed HTML indents a lone <code> inside its <pre>; that
-			// whitespace is markup, not content, so only <code>'s text is used.
 			// phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOMDocument property.
 			if ( 1 === $code_nodes->length && $code_el->parentNode->isSameNode( $node ) ) {
 				$source = $code_el;
@@ -222,23 +206,17 @@ class MD4AI_Converter {
 			)
 		);
 		$code    = self::children_to_md( $source, $pre_ctx );
-		// Leading blank lines (the newline after <pre>) and trailing whitespace
-		// go; the first line's indentation is content and stays.
+		// Strip only leading blank lines, not trim(): the first line's indentation is content.
 		$code  = rtrim( (string) preg_replace( '/^(?:[ \t]*\r?\n)+/', '', $code ) );
 		$fence = str_repeat( '`', max( 3, self::longest_backtick_run( $code ) + 1 ) );
-		// A NUL after each newline keeps the block's blank lines out of reach
-		// of every later newline collapse (convert(), list items); convert()
-		// strips the tags once the tree walk is done. libxml never yields NUL
-		// in text, so no real content goes with them.
+		// NULs shield the fence's blank lines from later newline collapses; convert() strips them.
 		$code = str_replace( "\n", "\n\0", $code );
 
 		return "\n\n{$fence}{$lang}\n" . $code . "\n{$fence}\n\n";
 	}
 
 	/**
-	 * Wraps text in a code span whose delimiter is longer than any backtick
-	 * run inside it. The padding spaces keep an edge backtick from merging
-	 * with the delimiter; CommonMark strips one space from each side.
+	 * Wraps text in a code span whose delimiter outruns any backtick run inside.
 	 *
 	 * @param string $code Code span content.
 	 * @return string
@@ -267,10 +245,6 @@ class MD4AI_Converter {
 
 	/**
 	 * Converts a list to Markdown.
-	 *
-	 * Ordered lists keep their numbering, start attribute included. Each
-	 * item's continuation lines and nested lists are indented to the width
-	 * of its own marker — what keeps a "10. " item's children inside it.
 	 *
 	 * @param DOMElement           $node   List element.
 	 * @param array<string, mixed> $ctx    Conversion context.
@@ -311,7 +285,6 @@ class MD4AI_Converter {
 			}
 
 			$item_text = trim( $item_text );
-			// Continuation lines must be indented to stay inside the list item.
 			$item_text = preg_replace( "/\n{2,}/", "\n", $item_text );
 			$item_text = str_replace( "\n", "\n" . $item_indent, (string) $item_text );
 
@@ -401,9 +374,7 @@ class MD4AI_Converter {
 	}
 
 	/**
-	 * Wraps inline content in emphasis markers, hoisting edge whitespace
-	 * outside the markers so the Markdown stays valid (`** text **` is not
-	 * parsed as bold).
+	 * Wraps inline content in emphasis markers, hoisting edge whitespace outside.
 	 *
 	 * @param string $marker Emphasis marker (`**` or `*`).
 	 * @param string $inner  Inner Markdown content.

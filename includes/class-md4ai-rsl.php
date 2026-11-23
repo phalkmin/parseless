@@ -11,8 +11,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Serves a machine-readable licence document at /license.xml.
- *
- * Declaration only: no licence server, no payment handling, no enforcement.
  */
 class MD4AI_RSL {
 
@@ -90,8 +88,7 @@ class MD4AI_RSL {
 	}
 
 	/**
-	 * Returns the URL an interested party should use to negotiate terms, for
-	 * payment types that require negotiation.
+	 * Returns the terms-negotiation URL for payment types that need one.
 	 *
 	 * @param string $payment Payment type.
 	 * @return string Empty when the terms need no contact point.

@@ -40,8 +40,6 @@ class MD4AI {
 			return;
 		}
 
-		// Archives, the home page, unservable posts: the bot still gets HTML
-		// here, and that contact is what the reachability table counts.
 		$post_types = md4ai_enabled_post_types();
 		if ( empty( $post_types ) || ! is_singular( $post_types ) ) {
 			self::maybe_log_html_bot_hit();
@@ -82,7 +80,7 @@ class MD4AI {
 		);
 
 		MD4AI_Headers::send_markdown( $markdown );
-		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- plain-text Markdown response, not HTML; entity-encoding would corrupt the output.
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- plain-text Markdown; must not be entity-encoded.
 		echo $markdown;
 		exit;
 	}
@@ -115,10 +113,6 @@ class MD4AI {
 
 	/**
 	 * Logs a known crawler that is about to receive the normal HTML page.
-	 *
-	 * This is the "does GPTBot even reach me?" signal: a bot that never shows
-	 * up here, or only ever as 429s, is being stopped upstream by the host.
-	 * Cached HTML never reaches PHP, so the view is a floor, not a total.
 	 */
 	private static function maybe_log_html_bot_hit(): void {
 		if ( ! md4ai_get_setting( 'enable_logging' ) || ! md4ai_get_setting( 'log_all_bot_traffic' ) ) {
@@ -144,18 +138,13 @@ class MD4AI {
 	/**
 	 * Renders a post's content to Markdown with full post context.
 	 *
-	 * Page builders (Elementor, Divi, WPBakery) hook `the_content` and render
-	 * from the current document rather than the string passed in, so calling
-	 * the filter outside the loop yields empty output. setup_postdata() gives
-	 * them the document they expect.
-	 *
 	 * @param WP_Post $post Post object.
 	 * @return string
 	 */
 	public static function render_body( WP_Post $post ): string {
 		$previous = $GLOBALS['post'] ?? null;
 
-		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- deliberately setting the global page builders read from `the_content`; restored below.
+		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- page builders read this global; restored below.
 		$GLOBALS['post'] = $post;
 		setup_postdata( $post );
 
@@ -163,7 +152,7 @@ class MD4AI {
 		$html = apply_filters( 'the_content', $post->post_content );
 
 		if ( $previous instanceof WP_Post ) {
-			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- restoring the previous post context, not overriding it.
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- restoring the previous post.
 			$GLOBALS['post'] = $previous;
 			setup_postdata( $previous );
 		} else {
@@ -259,10 +248,6 @@ class MD4AI {
 	/**
 	 * Clears cached Markdown when a post is saved.
 	 *
-	 * Revisions and autosaves never change what any endpoint serves, and the
-	 * OKF clear below is a full-bundle wipe — without this guard every editor
-	 * heartbeat would trigger it and keep the O(N) slug map perpetually cold.
-	 *
 	 * @param int $post_id Post ID.
 	 */
 	public static function on_save_post( int $post_id ): void {
@@ -276,15 +261,8 @@ class MD4AI {
 	/**
 	 * Clears cached documents when a post is permanently deleted.
 	 *
-	 * Trashing goes through wp_update_post() and reaches on_save_post(). A
-	 * direct delete — WP-CLI, EMPTY_TRASH_DAYS = 0, a post type without
-	 * trash — fires nothing on the save side, and would leave the post's
-	 * content in llms-full.txt and its OKF concept until they expire.
-	 *
 	 * @param int          $post_id Deleted post ID.
-	 * @param WP_Post|null $post    The post as it was before deletion. Core
-	 *                              always passes it; a third-party re-fire of
-	 *                              the hook may not, and then we clear anyway.
+	 * @param WP_Post|null $post    The post before deletion, if passed.
 	 */
 	public static function on_deleted_post( int $post_id, ?WP_Post $post = null ): void {
 		if ( $post instanceof WP_Post && ! self::serves_type( $post->post_type ) ) {
@@ -297,10 +275,6 @@ class MD4AI {
 	/**
 	 * Clears cached documents when a noindex flag changes without a post save.
 	 *
-	 * SEO plugins' bulk editors and WP-CLI write these flags with
-	 * update_post_meta() alone, and is_post_servable() reads them, so a
-	 * post's eligibility can flip with no save_post to notice it.
-	 *
 	 * @param int|int[] $meta_id  Meta row ID(s); unused.
 	 * @param int       $post_id  Post the meta belongs to.
 	 * @param string    $meta_key Meta key.
@@ -310,8 +284,6 @@ class MD4AI {
 			return;
 		}
 
-		// Attachments and other unserved types carry these flags too; a bulk
-		// edit over them must not wipe the bundle once per row.
 		$post = get_post( $post_id );
 		if ( ! $post instanceof WP_Post || ! self::serves_type( $post->post_type ) ) {
 			return;

@@ -40,12 +40,26 @@ class MD4AI_Sitemap {
 			return;
 		}
 
-		$cached = get_transient( self::TRANSIENT_KEY );
+		$cache_hit = true;
+		$cached    = get_transient( self::TRANSIENT_KEY );
 		if ( false === $cached ) {
-			$cached = self::build();
-			$ttl    = (int) apply_filters( 'md4ai_cache_ttl', DAY_IN_SECONDS, 0 );
+			$cached    = self::build();
+			$cache_hit = false;
+			$ttl       = (int) apply_filters( 'md4ai_cache_ttl', DAY_IN_SECONDS, 0 );
 			set_transient( self::TRANSIENT_KEY, $cached, $ttl );
 		}
+
+		MD4AI_Logger::record(
+			array(
+				'post_id'      => 0,
+				'url'          => md4ai_current_url(),
+				'user_agent'   => md4ai_current_ua(),
+				'bot_name'     => MD4AI_Detector::bot_name(),
+				'bytes_served' => strlen( $cached ),
+				'cache_hit'    => $cache_hit,
+				'served'       => MD4AI_Logger::SERVED_SITEMAP,
+			)
+		);
 
 		header( 'Content-Type: application/xml; charset=utf-8' );
 		header( 'X-Robots-Tag: noindex' );

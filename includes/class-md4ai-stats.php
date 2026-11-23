@@ -45,7 +45,7 @@ class MD4AI_Stats {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$row = $wpdb->get_row(
 			$wpdb->prepare(
-				'SELECT COUNT(*) AS total, SUM(cache_hit) AS hits FROM %i WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)',
+				'SELECT COUNT(*) AS total, SUM(cache_hit) AS hits FROM %i WHERE served = \'markdown\' AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)',
 				$table,
 				max( 1, $days )
 			)
@@ -54,6 +54,35 @@ class MD4AI_Stats {
 			return null;
 		}
 		return (float) $row->hits / (float) $row->total;
+	}
+
+	/**
+	 * Returns the top N bots that successfully fetched an individual post.
+	 *
+	 * @param int $days  Window length.
+	 * @param int $limit Number of rows to return.
+	 * @return array<int, array{bot_name:string, hits:int, last_seen:string}>
+	 */
+	public static function top_content_bots( int $days, int $limit = 5 ): array {
+		global $wpdb;
+		$table = MD4AI_Logger::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT bot_name, COUNT(*) AS hits, MAX(created_at) AS last_seen
+				 FROM %i
+				 WHERE bot_name <> '' AND served = 'markdown' AND post_id > 0
+				   AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)
+				 GROUP BY bot_name
+				 ORDER BY hits DESC
+				 LIMIT %d",
+				$table,
+				max( 1, $days ),
+				max( 1, $limit )
+			),
+			ARRAY_A
+		);
+		return is_array( $rows ) ? $rows : array();
 	}
 
 	/**
@@ -85,15 +114,10 @@ class MD4AI_Stats {
 	}
 
 	/**
-	 * Returns reachability per known bot: one row for every crawler on the
-	 * configured list, whether or not it has ever been seen, with its last
-	 * contact and a breakdown of what it received.
-	 *
-	 * A bot with no row at all — or only blocked/throttled rows — is the
-	 * owner's hint that something upstream (host, CDN) is stopping it.
+	 * Returns per-bot reachability, including listed bots never seen.
 	 *
 	 * @param int $days Window length.
-	 * @return array<int, array{bot_name:string, last_seen:string, markdown:int, html:int, blocked:int, throttled:int}>
+	 * @return array<int, array{bot_name:string, last_seen:string, markdown:int, html:int, blocked:int, throttled:int, verified:int, unverified:int}>
 	 */
 	public static function bot_reachability( int $days ): array {
 		global $wpdb;
@@ -101,7 +125,8 @@ class MD4AI_Stats {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT bot_name, served, COUNT(*) AS hits, MAX(created_at) AS last_seen
+				"SELECT bot_name, served, COUNT(*) AS hits, MAX(created_at) AS last_seen,
+				        SUM(verified = 1) AS verified_hits, SUM(verified = 0) AS unverified_hits
 				 FROM %i
 				 WHERE bot_name <> '' AND bot_name NOT IN ('manual', 'unknown')
 				   AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)
@@ -122,19 +147,19 @@ class MD4AI_Stats {
 			if ( isset( $seen[ $key ][ $served ] ) ) {
 				$seen[ $key ][ $served ] += (int) $row['hits'];
 			}
+			$seen[ $key ]['verified']   += (int) $row['verified_hits'];
+			$seen[ $key ]['unverified'] += (int) $row['unverified_hits'];
 			if ( strcmp( (string) $row['last_seen'], $seen[ $key ]['last_seen'] ) > 0 ) {
 				$seen[ $key ]['last_seen'] = (string) $row['last_seen'];
 			}
 		}
 
-		// Known-but-silent bots are the interesting ones; list them too.
 		$result = array();
 		foreach ( MD4AI_Detector::get_bot_list() as $bot ) {
 			$key      = strtolower( (string) $bot );
 			$result[] = $seen[ $key ] ?? self::empty_reach_row( (string) $bot );
 			unset( $seen[ $key ] );
 		}
-		// Bots seen before being removed from the list still have rows.
 		foreach ( $seen as $row ) {
 			$result[] = $row;
 		}
@@ -150,16 +175,18 @@ class MD4AI_Stats {
 	 * Returns a zeroed reachability row.
 	 *
 	 * @param string $bot_name Bot identifier.
-	 * @return array{bot_name:string, last_seen:string, markdown:int, html:int, blocked:int, throttled:int}
+	 * @return array{bot_name:string, last_seen:string, markdown:int, html:int, blocked:int, throttled:int, verified:int, unverified:int}
 	 */
 	private static function empty_reach_row( string $bot_name ): array {
 		return array(
-			'bot_name'  => $bot_name,
-			'last_seen' => '',
-			'markdown'  => 0,
-			'html'      => 0,
-			'blocked'   => 0,
-			'throttled' => 0,
+			'bot_name'   => $bot_name,
+			'last_seen'  => '',
+			'markdown'   => 0,
+			'html'       => 0,
+			'blocked'    => 0,
+			'throttled'  => 0,
+			'verified'   => 0,
+			'unverified' => 0,
 		);
 	}
 
@@ -193,10 +220,6 @@ class MD4AI_Stats {
 
 	/**
 	 * Returns the top N fetched URLs over the window.
-	 *
-	 * Unlike {@see self::top_posts()}, this groups by the raw URL, so endpoint
-	 * fetches that carry no post ID (llms.txt, the sitemap, OKF bundle files)
-	 * are included.
 	 *
 	 * @param int $days  Window length.
 	 * @param int $limit Number of rows to return.
@@ -252,11 +275,7 @@ class MD4AI_Stats {
 	}
 
 	/**
-	 * Returns chart-ready bot activity over time.
-	 *
-	 * Buckets hits by day for the top N bots across the window. Days with no
-	 * traffic for a bot are filled with zero so every series aligns to the
-	 * same date axis.
+	 * Returns zero-filled daily hits for the top N bots, ready for the chart.
 	 *
 	 * @param int $days Window length.
 	 * @param int $top  Number of bots to chart.
@@ -286,7 +305,6 @@ class MD4AI_Stats {
 			);
 		}
 
-		// Build the date axis: every day in the window, oldest first.
 		$labels = array();
 		$cursor = strtotime( '-' . ( $days - 1 ) . ' days', strtotime( gmdate( 'Y-m-d' ) ) );
 		for ( $i = 0; $i < $days; $i++ ) {
@@ -294,7 +312,6 @@ class MD4AI_Stats {
 			$cursor   = strtotime( '+1 day', $cursor );
 		}
 
-		// Tally per bot and per (bot,day).
 		$totals = array();
 		$by_day = array();
 		foreach ( $rows as $row ) {
@@ -337,7 +354,7 @@ class MD4AI_Stats {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				'SELECT created_at, post_id, url, user_agent, bot_name, bytes_served, cache_hit, served
+				'SELECT created_at, post_id, url, user_agent, bot_name, bytes_served, cache_hit, served, verified
 				 FROM %i
 				 WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL %d DAY)
 				 ORDER BY created_at DESC',

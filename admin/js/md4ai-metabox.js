@@ -31,7 +31,7 @@
 						return;
 					}
 
-					navigator.clipboard.writeText( json.data.markdown ).then( function () {
+					return navigator.clipboard.writeText( json.data.markdown ).then( function () {
 						status.textContent = btn.dataset.copiedText || 'Copied!';
 						setTimeout( function () {
 							status.textContent = '';

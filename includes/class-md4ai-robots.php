@@ -10,8 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Sole owner of the robots_txt filter: sitemap, Content Signals, AI bot rules
- * and the RSL licence directive all compose here.
+ * Sole owner of the robots_txt filter.
  */
 class MD4AI_Robots {
 
@@ -45,10 +44,6 @@ class MD4AI_Robots {
 	/**
 	 * Inserts the Content-Signal line into the existing "User-agent: *" group.
 	 *
-	 * The directive is only valid inside a user-agent group, so it is inserted
-	 * after that line rather than appended — appending yields a file validators
-	 * reject.
-	 *
 	 * @param string $output robots.txt content.
 	 * @return string
 	 */
@@ -72,7 +67,6 @@ class MD4AI_Robots {
 		}
 
 		if ( ! $inserted ) {
-			// No wildcard group to join, so declare our own.
 			$out[] = '';
 			$out[] = 'User-agent: *';
 			$out[] = $line;
@@ -84,8 +78,7 @@ class MD4AI_Robots {
 	}
 
 	/**
-	 * Builds the Content-Signal directive line, or "" when the owner has
-	 * expressed no preference at all.
+	 * Builds the Content-Signal directive line, or "" when no signal is set.
 	 *
 	 * @return string
 	 */
@@ -139,9 +132,6 @@ class MD4AI_Robots {
 
 	/**
 	 * Declares the blocked-bot list as Disallow groups.
-	 *
-	 * These crawlers already receive a 403 from the Markdown endpoint. Saying so
-	 * in robots.txt means the polite ones never fetch in the first place.
 	 *
 	 * @param string $output robots.txt content.
 	 * @return string

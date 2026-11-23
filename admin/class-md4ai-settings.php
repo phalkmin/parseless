@@ -66,65 +66,65 @@ class MD4AI_Settings {
 		$rsl_payment        = isset( $_POST['rsl_payment_type'] ) ? sanitize_key( wp_unslash( $_POST['rsl_payment_type'] ) ) : '';
 		$product_details    = isset( $_POST['product_details_enabled'] );
 		$product_ttl        = isset( $_POST['product_cache_ttl'] ) ? absint( wp_unslash( $_POST['product_cache_ttl'] ) ) : 0;
+		$ip_header          = isset( $_POST['client_ip_header'] ) ? sanitize_key( wp_unslash( $_POST['client_ip_header'] ) ) : '';
+		$ip_header_keys     = array( 'remote_addr', 'cf_connecting_ip', 'x_forwarded_for', 'x_real_ip' );
 		if ( ! MD4AI_WooCommerce::is_active() ) {
-			// The WooCommerce section only renders when Woo is active; its
-			// absent fields must not silently reset the saved values.
+			// The WooCommerce fields are not rendered without Woo, so keep the saved values.
 			$product_details = (bool) md4ai_get_setting( 'product_details_enabled' );
 			$product_ttl     = absint( md4ai_get_setting( 'product_cache_ttl' ) );
 		}
-		// RSL 1.0 vocabulary: usage tokens for <permits>, payment types for
-		// <payment>. "none" is our own sentinel that emits <prohibits>.
 		$permit_tokens = array( 'all', 'train-ai', 'ai-use', 'search', 'none' );
 		$payment_types = array( 'free', 'attribution', 'subscription', 'use', 'training' );
 
 		$settings = array(
-			'detection_mode'              => in_array( $detection_mode, array( 'both', 'query_param', 'ua' ), true )
+			'detection_mode'                   => in_array( $detection_mode, array( 'both', 'query_param', 'ua' ), true )
 				? $detection_mode
 				: $defaults['detection_mode'],
-			'query_param_name'            => $query_param_name,
-			'bot_list'                    => sanitize_textarea_field( wp_unslash( $_POST['bot_list'] ?? '' ) ),
-			'blocked_bots'                => sanitize_textarea_field( wp_unslash( $_POST['blocked_bots'] ?? '' ) ),
-			'rate_limit_enabled'          => isset( $_POST['rate_limit_enabled'] ),
-			'rate_limit_per_minute'       => isset( $_POST['rate_limit_per_minute'] ) ? max( 1, min( 10000, absint( wp_unslash( $_POST['rate_limit_per_minute'] ) ) ) ) : $defaults['rate_limit_per_minute'],
-			'cache_ttl'                   => in_array( $cache_ttl, array( HOUR_IN_SECONDS, 6 * HOUR_IN_SECONDS, DAY_IN_SECONDS, WEEK_IN_SECONDS ), true )
+			'query_param_name'                 => $query_param_name,
+			'bot_list'                         => sanitize_textarea_field( wp_unslash( $_POST['bot_list'] ?? '' ) ),
+			'blocked_bots'                     => sanitize_textarea_field( wp_unslash( $_POST['blocked_bots'] ?? '' ) ),
+			'rate_limit_enabled'               => isset( $_POST['rate_limit_enabled'] ),
+			'rate_limit_per_minute'            => isset( $_POST['rate_limit_per_minute'] ) ? max( 1, min( 10000, absint( wp_unslash( $_POST['rate_limit_per_minute'] ) ) ) ) : $defaults['rate_limit_per_minute'],
+			'rate_limit_unverified_per_minute' => isset( $_POST['rate_limit_unverified_per_minute'] ) ? max( 1, min( 10000, absint( wp_unslash( $_POST['rate_limit_unverified_per_minute'] ) ) ) ) : $defaults['rate_limit_unverified_per_minute'],
+			'verify_bots'                      => isset( $_POST['verify_bots'] ),
+			'client_ip_header'                 => in_array( $ip_header, $ip_header_keys, true ) ? $ip_header : $defaults['client_ip_header'],
+			'cache_ttl'                        => in_array( $cache_ttl, array( HOUR_IN_SECONDS, 6 * HOUR_IN_SECONDS, DAY_IN_SECONDS, WEEK_IN_SECONDS ), true )
 					? $cache_ttl
 					: $defaults['cache_ttl'],
-			'enabled_post_types'          => array_values(
+			'enabled_post_types'               => array_values(
 				array_intersect(
 					$enabled_post_types,
 					$all_types
 				)
 			),
-			'llmstxt_enabled'             => isset( $_POST['llmstxt_enabled'] ),
-			// Clamped to the number fields' rendered min/max: an emptied field
-			// submits "", and absint('') = 0 would silently list zero posts.
-			'llmstxt_max_posts'           => max( 1, min( 1000, $llmstxt_max_posts ) ),
-			'sitemap_enabled'             => isset( $_POST['sitemap_enabled'] ),
-			'okf_enabled'                 => isset( $_POST['okf_enabled'] ),
-			'okf_endpoint'                => isset( $_POST['okf_endpoint'] ) ? sanitize_title( wp_unslash( $_POST['okf_endpoint'] ) ) : $defaults['okf_endpoint'],
-			'okf_max_posts'               => isset( $_POST['okf_max_posts'] ) ? max( 1, min( 5000, absint( wp_unslash( $_POST['okf_max_posts'] ) ) ) ) : $defaults['okf_max_posts'],
-			'include_frontmatter'         => isset( $_POST['include_frontmatter'] ),
-			'include_schema'              => isset( $_POST['include_schema'] ),
-			'enable_logging'              => isset( $_POST['enable_logging'] ),
-			'log_retention_days'          => in_array( $retention_days, array( 7, 30, 90, 365 ), true )
+			'llmstxt_enabled'                  => isset( $_POST['llmstxt_enabled'] ),
+			'llmstxt_max_posts'                => max( 1, min( 1000, $llmstxt_max_posts ) ),
+			'sitemap_enabled'                  => isset( $_POST['sitemap_enabled'] ),
+			'okf_enabled'                      => isset( $_POST['okf_enabled'] ),
+			'okf_endpoint'                     => isset( $_POST['okf_endpoint'] ) ? sanitize_title( wp_unslash( $_POST['okf_endpoint'] ) ) : $defaults['okf_endpoint'],
+			'okf_max_posts'                    => isset( $_POST['okf_max_posts'] ) ? max( 1, min( 5000, absint( wp_unslash( $_POST['okf_max_posts'] ) ) ) ) : $defaults['okf_max_posts'],
+			'include_frontmatter'              => isset( $_POST['include_frontmatter'] ),
+			'include_schema'                   => isset( $_POST['include_schema'] ),
+			'enable_logging'                   => isset( $_POST['enable_logging'] ),
+			'log_retention_days'               => in_array( $retention_days, array( 7, 30, 90, 365 ), true )
 				? $retention_days
 				: $defaults['log_retention_days'],
-			'log_unknown_uas'             => isset( $_POST['log_unknown_uas'] ),
-			'log_all_bot_traffic'         => isset( $_POST['log_all_bot_traffic'] ),
-			'accept_negotiation'          => isset( $_POST['accept_negotiation'] ),
-			'md_suffix_enabled'           => isset( $_POST['md_suffix_enabled'] ),
-			'link_header_enabled'         => isset( $_POST['link_header_enabled'] ),
-			'html_link_tag_enabled'       => isset( $_POST['html_link_tag_enabled'] ),
-			'content_signal_search'       => in_array( $signal_search, $signal_values, true ) ? $signal_search : $defaults['content_signal_search'],
-			'content_signal_ai_input'     => in_array( $signal_input, $signal_values, true ) ? $signal_input : $defaults['content_signal_ai_input'],
-			'content_signal_ai_train'     => in_array( $signal_train, $signal_values, true ) ? $signal_train : $defaults['content_signal_ai_train'],
-			'content_signals_boilerplate' => isset( $_POST['content_signals_boilerplate'] ),
-			'robots_ai_rules'             => isset( $_POST['robots_ai_rules'] ),
-			'rsl_enabled'                 => isset( $_POST['rsl_enabled'] ),
-			'rsl_permits'                 => in_array( $rsl_permits, $permit_tokens, true ) ? $rsl_permits : $defaults['rsl_permits'],
-			'rsl_payment_type'            => in_array( $rsl_payment, $payment_types, true ) ? $rsl_payment : $defaults['rsl_payment_type'],
-			'product_details_enabled'     => $product_details,
-			'product_cache_ttl'           => $product_ttl > 0 ? $product_ttl : $defaults['product_cache_ttl'],
+			'log_unknown_uas'                  => isset( $_POST['log_unknown_uas'] ),
+			'log_all_bot_traffic'              => isset( $_POST['log_all_bot_traffic'] ),
+			'accept_negotiation'               => isset( $_POST['accept_negotiation'] ),
+			'md_suffix_enabled'                => isset( $_POST['md_suffix_enabled'] ),
+			'link_header_enabled'              => isset( $_POST['link_header_enabled'] ),
+			'html_link_tag_enabled'            => isset( $_POST['html_link_tag_enabled'] ),
+			'content_signal_search'            => in_array( $signal_search, $signal_values, true ) ? $signal_search : $defaults['content_signal_search'],
+			'content_signal_ai_input'          => in_array( $signal_input, $signal_values, true ) ? $signal_input : $defaults['content_signal_ai_input'],
+			'content_signal_ai_train'          => in_array( $signal_train, $signal_values, true ) ? $signal_train : $defaults['content_signal_ai_train'],
+			'content_signals_boilerplate'      => isset( $_POST['content_signals_boilerplate'] ),
+			'robots_ai_rules'                  => isset( $_POST['robots_ai_rules'] ),
+			'rsl_enabled'                      => isset( $_POST['rsl_enabled'] ),
+			'rsl_permits'                      => in_array( $rsl_permits, $permit_tokens, true ) ? $rsl_permits : $defaults['rsl_permits'],
+			'rsl_payment_type'                 => in_array( $rsl_payment, $payment_types, true ) ? $rsl_payment : $defaults['rsl_payment_type'],
+			'product_details_enabled'          => $product_details,
+			'product_cache_ttl'                => $product_ttl > 0 ? $product_ttl : $defaults['product_cache_ttl'],
 		);
 
 		if ( '' === $settings['query_param_name'] ) {
@@ -136,9 +136,13 @@ class MD4AI_Settings {
 
 		update_option( 'md4ai_settings', $settings );
 
-		// Cached documents embed setting-dependent output: the OKF bundle URL
-		// in llms.txt, the query param name in sitemap URLs, and the
-		// frontmatter/schema toggles in every per-post Markdown body.
+		if ( $settings['verify_bots'] ) {
+			MD4AI_Verifier::schedule();
+		} else {
+			MD4AI_Verifier::unschedule();
+		}
+
+		// Every cached document, per-post Markdown included, embeds setting-dependent output.
 		MD4AI_LLMsTxt::clear_cache();
 		MD4AI_OKF::purge_all();
 		MD4AI_RSL::clear_cache();
@@ -189,7 +193,7 @@ class MD4AI_Settings {
 	}
 
 	/**
-	 * Renders the settings form (extracted from the legacy single-page render).
+	 * Renders the settings form.
 	 */
 	public static function render_settings_form(): void {
 		$s                 = md4ai_get_settings();
@@ -265,6 +269,45 @@ class MD4AI_Settings {
 					</td>
 				</tr>
 				<tr>
+					<th scope="row"><?php esc_html_e( 'Verify crawler identity', 'parseless' ); ?></th>
+					<td>
+						<label>
+							<input type="checkbox" name="verify_bots" value="1" <?php checked( (bool) $s['verify_bots'] ); ?>>
+							<?php esc_html_e( "Check each known crawler's IP against the list its operator publishes", 'parseless' ); ?>
+						</label>
+						<p class="description"><?php esc_html_e( "Off by default. Once a day ParseLess downloads the IP lists AI companies publish (OpenAI, Anthropic, Perplexity, Common Crawl, DuckDuckGo, Mistral, Amazon) — the plugin's only outbound request. Visitor IPs are compared in memory and never stored or sent anywhere. Bytespider, Meta and Cohere publish no list and always show as unknown.", 'parseless' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="md4ai_rate_limit_unverified_per_minute"><?php esc_html_e( 'Unverified crawler limit', 'parseless' ); ?></label></th>
+					<td>
+						<input type="number" id="md4ai_rate_limit_unverified_per_minute" name="rate_limit_unverified_per_minute" min="1" max="10000" step="1" class="small-text" value="<?php echo esc_attr( (string) $s['rate_limit_unverified_per_minute'] ); ?>">
+						<?php esc_html_e( 'requests per minute', 'parseless' ); ?>
+						<p class="description"><?php esc_html_e( "When rate limiting and verification are both on, a crawler whose IP is not on its operator's list gets this lower cap instead.", 'parseless' ); ?></p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="md4ai_client_ip_header"><?php esc_html_e( 'Visitor IP source', 'parseless' ); ?></label></th>
+					<td>
+						<select id="md4ai_client_ip_header" name="client_ip_header">
+							<?php
+							$ip_sources = array(
+								'remote_addr'      => __( 'Connection address (REMOTE_ADDR) — default', 'parseless' ),
+								'cf_connecting_ip' => __( 'CF-Connecting-IP (Cloudflare)', 'parseless' ),
+								'x_forwarded_for'  => __( 'X-Forwarded-For (last address, the one your proxy appends)', 'parseless' ),
+								'x_real_ip'        => __( 'X-Real-IP', 'parseless' ),
+							);
+							foreach ( $ip_sources as $val => $label ) :
+								?>
+								<option value="<?php echo esc_attr( $val ); ?>" <?php selected( (string) $s['client_ip_header'], $val ); ?>>
+									<?php echo esc_html( $label ); ?>
+								</option>
+							<?php endforeach; ?>
+						</select>
+						<p class="description"><?php esc_html_e( "Behind Cloudflare or another proxy the connection address is the proxy's, so every crawler would look unverified. Pick the header your proxy sets — only if you have exactly one proxy and all traffic passes through it, because the header can be forged otherwise. Also used for the hashed IP in the log.", 'parseless' ); ?></p>
+					</td>
+				</tr>
+				<tr>
 					<th scope="row"><label for="md4ai_cache_ttl"><?php esc_html_e( 'Cache TTL', 'parseless' ); ?></label></th>
 					<td>
 						<select id="md4ai_cache_ttl" name="cache_ttl">
@@ -317,7 +360,7 @@ class MD4AI_Settings {
 							<?php esc_html_e( 'Expose /botfood-sitemap.xml and advertise it in robots.txt', 'parseless' ); ?>
 						</label>
 						<p class="description">
-							<?php esc_html_e( 'Lists the Markdown version of every public post for AI crawlers.', 'parseless' ); ?>
+							<?php esc_html_e( 'Lists Markdown versions of up to 1,000 of the most recent public posts for AI crawlers.', 'parseless' ); ?>
 						</p>
 					</td>
 				</tr>

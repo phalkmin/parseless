@@ -27,9 +27,6 @@ class MD4AI_Metabox {
 	/**
 	 * Persists the "Exclude from AI" checkbox.
 	 *
-	 * The meta key is in NOINDEX_META_KEYS, so the write itself triggers the
-	 * cache clear in MD4AI::on_post_meta_change(); nothing to do here.
-	 *
 	 * @param int $post_id Post ID.
 	 */
 	public static function save_exclude_flag( int $post_id ): void {
@@ -100,10 +97,7 @@ class MD4AI_Metabox {
 	 * @param WP_Post $post Current post.
 	 */
 	public static function render( WP_Post $post ): void {
-		// markdown_url_for() picks a URL form that actually serves Markdown
-		// under the current settings ("" when none does, e.g. in UA-only
-		// detection mode, where a "?format=md" link would open plain HTML).
-		$md_url  = MD4AI_Headers::markdown_url_for( $post );
+		$md_url  = MD4AI_Detector::is_post_servable( $post ) ? MD4AI_Headers::markdown_url_for( $post ) : '';
 		$preview = self::build_preview( $post );
 		$nonce   = wp_create_nonce( 'md4ai_preview_' . $post->ID );
 		?>

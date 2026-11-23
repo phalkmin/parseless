@@ -44,9 +44,6 @@ class MD4AI_Detector {
 	/**
 	 * Post meta keys whose value can flip is_post_servable().
 	 *
-	 * The invalidation-side counterpart of is_noindex(): a write to one of
-	 * these without a post save must still clear the caches.
-	 *
 	 * @var string[]
 	 */
 	public const NOINDEX_META_KEYS = array(
@@ -62,8 +59,7 @@ class MD4AI_Detector {
 	public const EXCLUDE_META_KEY = '_md4ai_exclude';
 
 	/**
-	 * Set by MD4AI_Headers::maybe_strip_md_suffix() when the request URI ended
-	 * in ".md" and the suffix was stripped before routing.
+	 * Whether the request URI ended in ".md" before routing.
 	 *
 	 * @var bool
 	 */
@@ -108,10 +104,6 @@ class MD4AI_Detector {
 	/**
 	 * Determines whether the request's Accept header prefers Markdown.
 	 *
-	 * Serves Markdown only when text/markdown is acceptable and at least as
-	 * preferred as text/html. A wildcard "* / *" — curl's default — never
-	 * qualifies, and a malformed header falls through to HTML.
-	 *
 	 * @return bool
 	 */
 	public static function accepts_markdown(): bool {
@@ -136,12 +128,6 @@ class MD4AI_Detector {
 
 	/**
 	 * Parses an Accept header into explicit media type => q-value pairs.
-	 *
-	 * Wildcards are deliberately not expanded: only types the client named
-	 * outright count. Any unparseable q value makes the whole header
-	 * untrusted (null) — dropping just that one type could remove text/html
-	 * from the comparison and flip the decision toward Markdown, the
-	 * opposite of "never serve Markdown when unsure".
 	 *
 	 * @param string $accept Raw Accept header value.
 	 * @return array<string, float>|null Null when the header is malformed.
@@ -176,9 +162,6 @@ class MD4AI_Detector {
 	/**
 	 * Returns why the current request should receive Markdown, if it should.
 	 *
-	 * Precedence is deliberate: explicit URL forms first, then the Accept
-	 * header, then UA sniffing — most explicit signal wins.
-	 *
 	 * @return string One of 'query', 'suffix', 'accept', 'ua', or '' for none.
 	 */
 	public static function trigger(): string {
@@ -210,10 +193,6 @@ class MD4AI_Detector {
 
 	/**
 	 * Returns the bot identifier to log for the current request.
-	 *
-	 * A known crawler is identified by its User-Agent whichever URL form it
-	 * used: GPTBot following the advertised ".md" link is still GPTBot, not
-	 * manual traffic. Only an unrecognised UA on an explicit URL is "manual".
 	 *
 	 * @return string Bot UA substring, "manual" for an explicit request, or "".
 	 */
@@ -252,8 +231,7 @@ class MD4AI_Detector {
 	}
 
 	/**
-	 * Returns the effective bot UA substring list: saved setting if non-empty,
-	 * otherwise the defaults, with the md4ai_bot_list filter applied.
+	 * Returns the saved bot UA substring list, or the defaults, filtered.
 	 *
 	 * @return string[]
 	 */
@@ -274,8 +252,7 @@ class MD4AI_Detector {
 	}
 
 	/**
-	 * Returns the configured blocked-bot UA substring list. Unlike the bot
-	 * list, this has no built-in defaults: an empty list blocks nothing.
+	 * Returns the configured blocked-bot UA substring list.
 	 *
 	 * @return string[]
 	 */
@@ -390,21 +367,18 @@ class MD4AI_Detector {
 	 * @return bool
 	 */
 	private static function is_noindex( int $post_id ): bool {
-		// Yoast SEO.
 		if ( class_exists( 'WPSEO_Meta' ) ) {
 			$value = WPSEO_Meta::get_value( 'meta-robots-noindex', $post_id );
 			if ( '1' === (string) $value ) {
 				return true;
 			}
 		}
-		// Rank Math.
 		if ( class_exists( 'RankMath' ) ) {
 			$robots = get_post_meta( $post_id, 'rank_math_robots', true );
 			if ( is_array( $robots ) && in_array( 'noindex', $robots, true ) ) {
 				return true;
 			}
 		}
-		// Genesis Framework.
 		if ( '1' === (string) get_post_meta( $post_id, '_genesis_noindex', true ) ) {
 			return true;
 		}

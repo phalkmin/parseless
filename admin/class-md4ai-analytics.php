@@ -62,7 +62,7 @@ class MD4AI_Analytics {
 		echo '</p>';
 
 		$bots = MD4AI_Stats::top_bots( 30, 500 );
-		self::render_kpis( MD4AI_Bots::summarize( $bots ) );
+		self::render_kpis( MD4AI_Bots::summarize( MD4AI_Stats::top_content_bots( 30, 500 ) ) );
 		self::render_bot_chart();
 		self::render_reachability_table( MD4AI_Stats::bot_reachability( 30 ) );
 		self::render_bot_table( array_slice( $bots, 0, 50 ) );
@@ -73,15 +73,14 @@ class MD4AI_Analytics {
 	}
 
 	/**
-	 * Renders the "who is reading" KPI cards and the platform / purpose
-	 * breakdowns derived from the bot taxonomy.
+	 * Renders the KPI cards and the platform and purpose breakdowns.
 	 *
 	 * @param array{chat_impressions:int, distinct_crawlers:int, by_company:array<string,int>, by_purpose:array<string,int>} $summary Output of MD4AI_Bots::summarize().
 	 */
 	private static function render_kpis( array $summary ): void {
 		echo '<h2>' . esc_html__( 'Who is reading (30 days)', 'parseless' ) . '</h2>';
 		if ( empty( $summary['by_purpose'] ) ) {
-			echo '<p>' . esc_html__( 'No crawler traffic recorded yet.', 'parseless' ) . '</p>';
+			echo '<p>' . esc_html__( 'No successful post-content fetches recorded yet.', 'parseless' ) . '</p>';
 			return;
 		}
 
@@ -136,10 +135,6 @@ class MD4AI_Analytics {
 
 	/**
 	 * Renders the bot-activity-over-time chart canvas.
-	 *
-	 * The chart itself is drawn by Chart.js using data localised in
-	 * {@see self::enqueue_inline_script()}. When there is no data, the canvas
-	 * is skipped entirely.
 	 */
 	private static function render_bot_chart(): void {
 		$chart = MD4AI_Stats::daily_bot_hits( 30, 5 );
@@ -151,12 +146,13 @@ class MD4AI_Analytics {
 	}
 
 	/**
-	 * Renders the known-bot reachability table: every crawler on the list,
-	 * when it was last seen, and what it received.
+	 * Renders the known-bot reachability table.
 	 *
-	 * @param array<int, array{bot_name:string,last_seen:string,markdown:int,html:int,blocked:int,throttled:int}> $rows Rows from MD4AI_Stats::bot_reachability().
+	 * @param array<int, array{bot_name:string,last_seen:string,markdown:int,html:int,blocked:int,throttled:int,verified:int,unverified:int}> $rows Rows from MD4AI_Stats::bot_reachability().
 	 */
 	private static function render_reachability_table( array $rows ): void {
+		$verifying = (bool) md4ai_get_setting( 'verify_bots' );
+
 		echo '<h2>' . esc_html__( 'Known bots — reachability (30 days)', 'parseless' ) . '</h2>';
 		if ( ! md4ai_get_setting( 'log_all_bot_traffic' ) ) {
 			echo '<p class="description">' . esc_html__( 'Only Markdown fetches are recorded. Enable "Log All AI Crawler Traffic" under Settings to also see crawlers that receive the normal HTML page.', 'parseless' ) . '</p>';
@@ -172,6 +168,10 @@ class MD4AI_Analytics {
 		echo '<th>' . esc_html__( 'HTML', 'parseless' ) . '</th>';
 		echo '<th>' . esc_html__( 'Blocked', 'parseless' ) . '</th>';
 		echo '<th>' . esc_html__( 'Throttled', 'parseless' ) . '</th>';
+		if ( $verifying ) {
+			echo '<th>' . esc_html__( 'Verified', 'parseless' ) . '</th>';
+			echo '<th>' . esc_html__( 'Unverified', 'parseless' ) . '</th>';
+		}
 		echo '</tr></thead><tbody>';
 		foreach ( $rows as $row ) {
 			echo '<tr>';
@@ -185,10 +185,50 @@ class MD4AI_Analytics {
 			echo '<td>' . (int) $row['html'] . '</td>';
 			echo '<td>' . (int) $row['blocked'] . '</td>';
 			echo '<td>' . (int) $row['throttled'] . '</td>';
+			if ( $verifying ) {
+				echo '<td>' . (int) $row['verified'] . '</td>';
+				echo '<td>' . (int) $row['unverified'] . '</td>';
+			}
 			echo '</tr>';
 		}
 		echo '</tbody></table>';
 		echo '<p class="description">' . esc_html__( 'A bot that is never seen, or only ever blocked or throttled, may be stopped by your host or CDN before it reaches WordPress. Pages served from a full-page cache are not recorded.', 'parseless' ) . '</p>';
+
+		if ( $verifying ) {
+			self::render_verification_sources();
+		} else {
+			echo '<p class="description">' . esc_html__( 'Turn on "Verify crawler identity" under Settings to see whether each crawler\'s IP was on the list its operator publishes.', 'parseless' ) . '</p>';
+		}
+	}
+
+	/**
+	 * Renders each operator's list freshness and the bots no list covers.
+	 */
+	private static function render_verification_sources(): void {
+		$parts = array();
+		foreach ( MD4AI_Verifier::source_status() as $url => $info ) {
+			if ( $info['fetched_at'] > 0 ) {
+				/* translators: %s: human-readable time span, e.g. "3 hours" */
+				$when = sprintf( __( 'updated %s ago', 'parseless' ), human_time_diff( $info['fetched_at'] ) );
+			} else {
+				$when = __( 'not fetched yet', 'parseless' );
+			}
+			$parts[] = sprintf(
+				/* translators: 1: list host name, 2: comma-separated bot names, 3: freshness, e.g. "updated 3 hours ago" */
+				__( '%1$s (%2$s) — %3$s', 'parseless' ),
+				(string) wp_parse_url( $url, PHP_URL_HOST ),
+				implode( ', ', $info['bots'] ),
+				$when
+			);
+		}
+		echo '<p class="description">' . esc_html__( 'IP lists:', 'parseless' ) . ' ' . esc_html( implode( '; ', $parts ) ) . '.</p>';
+
+		$none = MD4AI_Verifier::unverifiable_bots();
+		if ( ! empty( $none ) ) {
+			echo '<p class="description">' . esc_html__( 'No published list:', 'parseless' ) . ' ' . esc_html( implode( ', ', $none ) ) . '.</p>';
+		}
+
+		echo '<p class="description">' . esc_html__( "Unverified means the IP was not on the operator's published list as of its last update. Lists lag by days, so a brand-new crawler address can show as unverified for a while. Lists not refreshed for seven days are treated as unknown until they update.", 'parseless' ) . '</p>';
 	}
 
 	/**
@@ -255,8 +295,7 @@ class MD4AI_Analytics {
 	}
 
 	/**
-	 * Renders the top-fetched-URLs table, including endpoint fetches
-	 * (llms.txt, sitemap, OKF bundle files) that carry no post ID.
+	 * Renders the top-fetched-URLs table, endpoint fetches included.
 	 *
 	 * @param array<int, array{url:string,hits:int,last_seen:string}> $rows Aggregated URL rows.
 	 */
@@ -392,9 +431,6 @@ class MD4AI_Analytics {
 
 	/**
 	 * Enqueues the bundled Chart.js and feeds it the bot-activity data.
-	 *
-	 * Only runs on the analytics tab when logging is on and there is data to
-	 * plot, so the 200KB asset is never loaded needlessly.
 	 */
 	private static function enqueue_chart(): void {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only tab switch, no state change.
@@ -477,8 +513,7 @@ class MD4AI_Analytics {
 
 		$settings = md4ai_get_settings();
 		$bot_list = (string) $settings['bot_list'];
-		// An empty saved list means the built-in defaults are active; seed
-		// them first, or saving a single UA would silently replace them all.
+		// An empty list means the defaults are active; seed them so one UA does not replace them all.
 		$lines = '' === trim( $bot_list )
 			? MD4AI_Detector::default_bot_list()
 			: array_filter( array_map( 'trim', explode( "\n", $bot_list ) ) );
@@ -491,10 +526,7 @@ class MD4AI_Analytics {
 	}
 
 	/**
-	 * Neutralises CSV formula injection: spreadsheet apps execute a cell whose
-	 * first character is one of = + - @ (or a leading tab/CR), and the logged
-	 * URL and User-Agent are attacker-controlled. Prefixing with a single quote
-	 * forces the cell to be read as text.
+	 * Neutralises spreadsheet formula injection in attacker-controlled cells.
 	 *
 	 * @param string $value Raw cell value.
 	 * @return string
@@ -527,7 +559,7 @@ class MD4AI_Analytics {
 		header( 'Content-Disposition: attachment; filename="parseless-requests-' . gmdate( 'Y-m-d' ) . '.csv"' );
 
 		$out = fopen( 'php://output', 'w' );
-		fputcsv( $out, array( 'created_at', 'post_id', 'url', 'user_agent', 'bot_name', 'bytes_served', 'cache_hit', 'served' ), ',', '"', '' );
+		fputcsv( $out, array( 'created_at', 'post_id', 'url', 'user_agent', 'bot_name', 'bytes_served', 'cache_hit', 'served', 'verified' ), ',', '"', '' );
 		foreach ( $rows as $row ) {
 			fputcsv(
 				$out,
@@ -540,6 +572,7 @@ class MD4AI_Analytics {
 					(int) $row['bytes_served'],
 					(int) $row['cache_hit'],
 					self::csv_safe( (string) ( $row['served'] ?? '' ) ),
+					null === ( $row['verified'] ?? null ) ? '' : (int) $row['verified'],
 				),
 				',',
 				'"',

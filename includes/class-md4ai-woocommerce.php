@@ -2,9 +2,6 @@
 /**
  * WooCommerce product support.
  *
- * Entirely optional: every entry point is guarded, and the plugin behaves
- * exactly as it does without WooCommerce when WooCommerce is absent.
- *
  * @package WP_Parseless
  */
 
@@ -18,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class MD4AI_WooCommerce {
 
 	/**
-	 * Registers hooks. Safe to call unconditionally.
+	 * Registers hooks when WooCommerce is active.
 	 */
 	public static function init(): void {
 		if ( ! self::is_active() ) {
@@ -36,16 +33,8 @@ class MD4AI_WooCommerce {
 	/**
 	 * Shortens the cache lifetime for products.
 	 *
-	 * Price and stock change on their own schedule, and a stale price is the
-	 * one error an agent will confidently repeat to a customer.
-	 *
-	 * Documents not tied to one post (llms.txt, the sitemap, the OKF index)
-	 * apply the filter with no post ID, so it must stay optional — and 0 must
-	 * not reach get_post(), which would resolve it to whatever global post
-	 * the request happens to hold.
-	 *
 	 * @param int $ttl     Cache lifetime in seconds.
-	 * @param int $post_id Post being cached, or 0 for a document spanning many.
+	 * @param int $post_id Post being cached, or 0 for multi-post documents.
 	 * @return int
 	 */
 	public static function cache_ttl( int $ttl, int $post_id = 0 ): int {
@@ -85,10 +74,6 @@ class MD4AI_WooCommerce {
 	/**
 	 * Whether a post will receive a product details section.
 	 *
-	 * Cheap on purpose: the OKF bundle build asks this for every product to
-	 * decide membership. Any resolvable product has at least an availability
-	 * row, so there is no need to build the table to know the answer.
-	 *
 	 * @param WP_Post $post Post object.
 	 * @return bool
 	 */
@@ -98,9 +83,6 @@ class MD4AI_WooCommerce {
 
 	/**
 	 * Returns the OKF concept type for a post.
-	 *
-	 * OKF v0.2 leaves type values uncentralized and requires consumers to
-	 * tolerate unknown ones, so "Product" needs no spec extension.
 	 *
 	 * @param WP_Post $post     Post object.
 	 * @param string  $fallback Type the caller would otherwise use.
@@ -122,16 +104,13 @@ class MD4AI_WooCommerce {
 			return '';
 		}
 
-		// Inside an OKF concept "# Schema" is the section, so the table's own
-		// headings move down one level to sit under it.
 		$details = preg_replace( '/^(#{2,3}) /m', '#$1 ', $details );
 
 		return '# ' . __( 'Schema', 'parseless' ) . "\n\n" . trim( (string) $details );
 	}
 
 	/**
-	 * Returns WooCommerce's transactional page IDs, which are never worth
-	 * serving as Markdown: without a session they render as empty shells.
+	 * Excludes WooCommerce's transactional pages, which render empty without a session.
 	 *
 	 * @param int[] $ids Existing excluded IDs.
 	 * @return int[]
@@ -171,8 +150,7 @@ class MD4AI_WooCommerce {
 	}
 
 	/**
-	 * Builds the product details block: the fields an agent actually asks
-	 * about, as a Markdown table, plus a variations table where relevant.
+	 * Builds the product details table, plus a variations table where relevant.
 	 *
 	 * @param WP_Post $post Post object.
 	 * @return string Empty string when the post is not a resolvable product.
@@ -209,9 +187,6 @@ class MD4AI_WooCommerce {
 
 	/**
 	 * Collects the label => value pairs for the details table.
-	 *
-	 * Prices carry both a formatted string and the currency code so an agent
-	 * gets something readable and something parseable.
 	 *
 	 * @param WC_Product $product Product object.
 	 * @return array<string, string>
@@ -250,9 +225,6 @@ class MD4AI_WooCommerce {
 	/**
 	 * Collects the price, sale and tax rows.
 	 *
-	 * The tax row says which way the prices lean so an agent quoting them
-	 * can say so too; it is omitted when tax does not apply to the product.
-	 *
 	 * @param WC_Product $product Product object.
 	 * @return array<string, string>
 	 */
@@ -283,16 +255,9 @@ class MD4AI_WooCommerce {
 	}
 
 	/**
-	 * Formats a price as "CUR 12.34" the way the storefront displays it, or
-	 * '' when there is no price.
+	 * Formats a price as "CUR 12.34" the way the storefront displays it.
 	 *
-	 * WooCommerce stores prices with or without tax and displays them with or
-	 * without tax, independently: a shop that enters 100 and shows 120 would
-	 * otherwise have its Markdown quote 100. The shop's base rates are used
-	 * deliberately — the storefront also varies by customer address or
-	 * geolocation, and a cached public document must not.
-	 *
-	 * @param WC_Product $product Product the price belongs to, for its tax class.
+	 * @param WC_Product $product Product the price belongs to.
 	 * @param mixed      $amount  Raw stored price.
 	 * @return string
 	 */
@@ -303,11 +268,9 @@ class MD4AI_WooCommerce {
 
 		$amount = (float) $amount;
 		if ( $product->is_taxable() && wc_prices_include_tax() !== self::display_includes_tax() ) {
+			// Base rates, not the customer's: a cached public document must not vary by location.
 			$rates = WC_Tax::get_base_tax_rates( $product->get_tax_class() );
 			$taxes = WC_Tax::calc_tax( $amount, $rates, wc_prices_include_tax() );
-			// Rounded per rate unless the shop rounds at subtotal — the same
-			// rule wc_get_price_to_display() follows, so multi-rate prices
-			// land on the storefront's cent.
 			if ( 'yes' !== get_option( 'woocommerce_tax_round_at_subtotal' ) ) {
 				$taxes = array_map( 'wc_round_tax_total', $taxes );
 			}
@@ -397,9 +360,6 @@ class MD4AI_WooCommerce {
 	/**
 	 * Escapes a value for use inside a Markdown table cell.
 	 *
-	 * Pipes would break the table and newlines would break the row, so both
-	 * are neutralised rather than dropped.
-	 *
 	 * @param string $value Cell value.
 	 * @return string
 	 */
@@ -409,11 +369,7 @@ class MD4AI_WooCommerce {
 	}
 
 	/**
-	 * Builds a table of purchasable variations.
-	 *
-	 * Capped: a product with hundreds of variations would dominate the response
-	 * and defeat the point of serving Markdown in the first place. When the cap
-	 * bites, the output says so rather than silently truncating.
+	 * Builds a capped table of purchasable variations.
 	 *
 	 * @param WC_Product $product Product object.
 	 * @return string Empty string for non-variable products.

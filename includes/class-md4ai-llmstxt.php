@@ -30,11 +30,8 @@ class MD4AI_LLMsTxt {
 		if ( 'llms.txt' === $path ) {
 			self::serve( self::TRANSIENT_KEY, self::build( ... ) );
 		} elseif ( 'llms-full.txt' === $path ) {
-			// Full content, so the Blocked Bots list and rate limit apply as
-			// on the Markdown endpoint; the llms.txt index stays open.
 			MD4AI_Headers::enforce_access();
-			// The block makes this URL vary by User-Agent, so a shared cache
-			// keyed on URL alone must not store it (llms.txt stays cacheable).
+			// Access checks make this vary by User-Agent, so a shared cache must not store it.
 			header( 'Cache-Control: private' );
 			self::serve( self::FULL_TRANSIENT_KEY, self::build_full( ... ) );
 		}
@@ -47,16 +44,31 @@ class MD4AI_LLMsTxt {
 	 * @param callable $builder Returns the document and its final cache lifetime.
 	 */
 	private static function serve( string $key, callable $builder ): void {
-		$cached = get_transient( $key );
+		$cache_hit = true;
+		$cached    = get_transient( $key );
 		if ( false === $cached ) {
 			list( $cached, $ttl ) = $builder();
+
+			$cache_hit = false;
 			if ( ! MD4AI_Cache::bypass() ) {
 				set_transient( $key, $cached, $ttl );
 			}
 		}
 
+		MD4AI_Logger::record(
+			array(
+				'post_id'      => 0,
+				'url'          => md4ai_current_url(),
+				'user_agent'   => md4ai_current_ua(),
+				'bot_name'     => MD4AI_Detector::bot_name(),
+				'bytes_served' => strlen( $cached ),
+				'cache_hit'    => $cache_hit,
+				'served'       => self::TRANSIENT_KEY === $key ? MD4AI_Logger::SERVED_INDEX : MD4AI_Logger::SERVED_MARKDOWN,
+			)
+		);
+
 		header( 'Content-Type: text/plain; charset=utf-8' );
-		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- plain-text response, not HTML; entity-encoding would corrupt the output.
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- plain-text llms.txt; must not be entity-encoded.
 		echo $cached;
 		exit;
 	}
@@ -91,14 +103,7 @@ class MD4AI_LLMsTxt {
 	}
 
 	/**
-	 * Builds the llms-full.txt content: full Markdown of the listed posts,
-	 * concatenated up to a size cap.
-	 *
-	 * The document can be no fresher than the shortest-lived post in it, so
-	 * its lifetime is a day bounded by the minimum of theirs — a product's
-	 * price would otherwise linger here long after its own endpoint refreshed
-	 * it. Each lifetime is filtered once, on its own base, so an arithmetic
-	 * md4ai_cache_ttl callback is not compounded.
+	 * Builds the llms-full.txt content up to a size cap.
 	 *
 	 * @return array{0: string, 1: int} Document and cache lifetime in seconds.
 	 */
@@ -109,16 +114,14 @@ class MD4AI_LLMsTxt {
 		$ttl       = (int) apply_filters( 'md4ai_cache_ttl', DAY_IN_SECONDS, 0 );
 
 		foreach ( self::get_listed_posts() as $post ) {
-			// Read the shared per-post cache but never write it: this document
-			// has its own transient, and writing here would let a llms-full.txt
-			// build decide what the single-post endpoint serves.
+			// Read-only: writing here would let an llms-full.txt build decide what the single-post endpoint serves.
 			$markdown = MD4AI_Cache::get( $post->ID );
 			if ( false === $markdown ) {
 				$markdown = MD4AI::build_markdown_for_preview( $post );
 			}
 			$section = $markdown . "\n\n---\n\n";
 			if ( strlen( $out ) + strlen( $section ) > $max_bytes ) {
-				break;
+				continue;
 			}
 			$out .= $section;
 

@@ -41,24 +41,15 @@ class MD4AI_Headers {
 			header( 'X-Robots-Tag: ' . $robots );
 		}
 
-		// Anything that isn't a distinct duplicate URL (?format=md, .md) is
-		// Markdown on the canonical URL — accept, ua, or a serve forced via
-		// the md4ai_should_serve_markdown filter — and a shared cache keyed
-		// on URL alone would hand it to browsers. The duplicate URLs vary by
-		// User-Agent too once any crawler is blocked: a stored 200 would be
-		// replayed to a crawler the 403 check never got to see.
+		// A shared cache would replay canonical-URL Markdown to browsers, or a 200 past the block/rate-limit check.
 		$duplicate_url = 'query' === $trigger || 'suffix' === $trigger;
-		if ( ! $duplicate_url || ! empty( MD4AI_Detector::get_blocked_bot_list() ) ) {
+		if ( ! $duplicate_url || ! empty( MD4AI_Detector::get_blocked_bot_list() ) || md4ai_get_setting( 'rate_limit_enabled' ) ) {
 			header( 'Cache-Control: private' );
 		}
 	}
 
 	/**
 	 * Sends a 403 for a blocked crawler and ends the request.
-	 *
-	 * Logged as a "blocked" row so the Analytics tab can show that the bot
-	 * reached the site but was refused, which is a different story from
-	 * "never seen".
 	 *
 	 * @param int $post_id Post the request targeted, 0 for endpoint fetches.
 	 */
@@ -78,8 +69,6 @@ class MD4AI_Headers {
 		status_header( 403 );
 		header( 'Content-Type: text/plain; charset=utf-8' );
 		header( 'X-Robots-Tag: noindex' );
-		// The block is per-User-Agent: a shared cache keyed on URL alone would
-		// serve this 403 to every legitimate agent that follows.
 		header( 'Cache-Control: private' );
 		echo "403 Forbidden\n";
 		exit;
@@ -113,9 +102,7 @@ class MD4AI_Headers {
 	}
 
 	/**
-	 * Applies the Blocked Bots list and the rate limit to the current request,
-	 * ending it with a 403 or 429 when either says so. The block wins: a
-	 * refused crawler should not also be counted against a quota.
+	 * Ends the request with a 403 or 429 when the crawler is blocked or throttled.
 	 *
 	 * @param int $post_id Post the request targeted, 0 for endpoint fetches.
 	 */
@@ -131,11 +118,6 @@ class MD4AI_Headers {
 	/**
 	 * Returns the X-Robots-Tag value for a Markdown response, or "" to omit it.
 	 *
-	 * The noindex tag belongs only on the URL forms that duplicate a canonical
-	 * page. Accept- and UA-triggered responses ARE the canonical URL, so
-	 * telling crawlers not to index them would suppress the content we
-	 * optimised.
-	 *
 	 * @param string $trigger Value from MD4AI_Detector::trigger().
 	 * @return string
 	 */
@@ -147,10 +129,7 @@ class MD4AI_Headers {
 	}
 
 	/**
-	 * Estimates the token count of a Markdown body.
-	 *
-	 * Four bytes per token, the same rough heuristic Cloudflare uses. Documented
-	 * as an estimate wherever it is surfaced.
+	 * Estimates the token count of a Markdown body at four bytes per token.
 	 *
 	 * @param string $markdown Response body.
 	 * @return int
@@ -161,11 +140,6 @@ class MD4AI_Headers {
 
 	/**
 	 * Sends Vary: accept on the HTML branch.
-	 *
-	 * Runs at template_redirect priority 2, after MD4AI::maybe_serve_markdown()
-	 * has either exited or declined. Without this, a shared cache that stored
-	 * an HTML response would serve it to agents asking for Markdown, and vice
-	 * versa.
 	 */
 	public static function send_vary_on_html(): void {
 		if ( headers_sent() ) {
@@ -178,12 +152,12 @@ class MD4AI_Headers {
 		if ( empty( $post_types ) || ! is_singular( $post_types ) ) {
 			return;
 		}
+		// Not User-Agent: it splinters Varnish/Fastly page caches, and UA-served Markdown is already private.
 		header( 'Vary: accept', false );
 	}
 
 	/**
-	 * Returns the Markdown URL for the currently queried post, or "" when the
-	 * request is not a servable singular view.
+	 * Returns the Markdown URL for the queried post, or "" when it is not servable.
 	 *
 	 * @return string
 	 */
@@ -202,15 +176,12 @@ class MD4AI_Headers {
 	}
 
 	/**
-	 * Returns a Markdown URL for a post that is guaranteed to actually serve
-	 * Markdown under the current settings, or "" when no such URL form exists.
+	 * Returns a working Markdown URL for a post, or "" when none exists.
 	 *
 	 * @param WP_Post $post Post object.
 	 * @return string
 	 */
 	public static function markdown_url_for( WP_Post $post ): string {
-		// The posts page routes to the blog archive (is_home), never to a
-		// singular view, so no URL form of it can serve Markdown.
 		if ( 'page' === $post->post_type && (int) get_option( 'page_for_posts' ) === (int) $post->ID ) {
 			return '';
 		}
@@ -220,10 +191,6 @@ class MD4AI_Headers {
 			return '';
 		}
 
-		// A plain permalink is already a query string ("/?p=123"), where
-		// appending ".md" would corrupt it, and the site-root permalink of a
-		// static front page would become "example.com.md" — a different
-		// domain. Both fall through to the query-parameter form.
 		$is_plain  = '' !== (string) wp_parse_url( $permalink, PHP_URL_QUERY );
 		$path      = trim( (string) wp_parse_url( $permalink, PHP_URL_PATH ), '/' );
 		$home_path = trim( (string) wp_parse_url( home_url(), PHP_URL_PATH ), '/' );
@@ -232,8 +199,6 @@ class MD4AI_Headers {
 			return rtrim( $permalink, '/' ) . '.md';
 		}
 
-		// In UA-only detection mode the query trigger is off, so advertising
-		// "?format=md" would be a link that serves HTML.
 		if ( 'ua' !== md4ai_get_setting( 'detection_mode' ) ) {
 			return add_query_arg( (string) md4ai_get_setting( 'query_param_name' ), 'md', $permalink );
 		}
@@ -242,8 +207,7 @@ class MD4AI_Headers {
 	}
 
 	/**
-	 * Advertises the Markdown alternate — and the RSL licence, when published —
-	 * in a Link header.
+	 * Advertises the Markdown alternate and RSL licence in a Link header.
 	 */
 	public static function send_link_header(): void {
 		if ( headers_sent() ) {
@@ -290,11 +254,7 @@ class MD4AI_Headers {
 	}
 
 	/**
-	 * Strips a trailing ".md" from the request path so WordPress routes the
-	 * clean permalink, and flags the request as a Markdown one.
-	 *
-	 * Runs at priority 0 — ahead of the llms.txt, sitemap, and OKF handlers,
-	 * which read REQUEST_URI directly and would not recognise a stripped path.
+	 * Strips a trailing ".md" from the request path and flags a Markdown request.
 	 */
 	public static function maybe_strip_md_suffix(): void {
 		if ( ! md4ai_get_setting( 'md_suffix_enabled' ) ) {
@@ -304,7 +264,7 @@ class MD4AI_Headers {
 			return;
 		}
 
-		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- the value written back is a strict substring of the existing superglobal (minus the ".md" suffix); sanitize_text_field() would strip percent-encoding and corrupt the path, and this value is never output.
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitizing would corrupt percent-encoding; never output.
 		$uri  = (string) wp_unslash( $_SERVER['REQUEST_URI'] );
 		$path = (string) wp_parse_url( $uri, PHP_URL_PATH );
 		if ( '.md' !== substr( $path, -3 ) ) {
@@ -326,10 +286,7 @@ class MD4AI_Headers {
 	}
 
 	/**
-	 * Whether a ".md" path belongs to the OKF bundle, which matches on the
-	 * unstripped path and must be left alone. Only the live bundle is
-	 * reserved: with OKF off, a real page slugged like the endpoint keeps its
-	 * working ".md" URL.
+	 * Whether a ".md" path belongs to the live OKF bundle.
 	 *
 	 * @param string $path Request path relative to home, slashes trimmed.
 	 * @return bool
@@ -339,9 +296,6 @@ class MD4AI_Headers {
 			return false;
 		}
 
-		// Callers only reach here when $path ends in ".md"; $bare is what
-		// OKF's own path-matching would see once the suffix is stripped and
-		// the request re-routed.
 		$endpoint = MD4AI_OKF::endpoint();
 		$bare     = substr( $path, 0, -3 );
 

@@ -10,8 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Exposes the Markdown output to MCP clients and AI agents natively, so
- * they need not sniff User-Agents or guess URLs. Inert before WordPress 6.9.
+ * Exposes the Markdown output to MCP clients and AI agents via the Abilities API.
  */
 class MD4AI_Abilities {
 
@@ -144,10 +143,6 @@ class MD4AI_Abilities {
 	/**
 	 * Resolves a post by ID or URL and returns its Markdown.
 	 *
-	 * Uses the same eligibility and cache as the HTTP endpoint so an agent
-	 * sees exactly what a crawler would — no private posts, no excluded
-	 * types, same frontmatter and product details.
-	 *
 	 * @param array<string, mixed> $input Ability input.
 	 * @return array<string, mixed>|WP_Error
 	 */
@@ -226,7 +221,7 @@ class MD4AI_Abilities {
 		}
 
 		$bots    = MD4AI_Stats::top_bots( $days, 500 );
-		$summary = MD4AI_Bots::summarize( $bots );
+		$summary = MD4AI_Bots::summarize( MD4AI_Stats::top_content_bots( $days, 500 ) );
 
 		return array(
 			'days'              => $days,

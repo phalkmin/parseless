@@ -1,0 +1,13 @@
+# Files and directories excluded from the WordPress.org SVN deploy.
+# The 10up deploy action ships everything tracked in git except these.
+
+/.git
+/.github
+/.distignore
+/.gitignore
+/.gitattributes
+phpcs.xml.dist
+composer.json
+composer.lock
+.DS_Store
+Thumbs.db

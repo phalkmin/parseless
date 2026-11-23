@@ -15,15 +15,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 class MD4AI_Logger {
 
 	/**
-	 * Schema version stored in the md4ai_db_version option. Bump when the
-	 * CREATE TABLE below changes; dbDelta applies the diff on plugins_loaded.
+	 * Schema version; bump when the CREATE TABLE below changes.
 	 */
-	public const DB_VERSION = '2';
+	public const DB_VERSION = '3';
 
 	public const SERVED_MARKDOWN  = 'markdown';
 	public const SERVED_HTML      = 'html';
 	public const SERVED_BLOCKED   = 'blocked';
 	public const SERVED_THROTTLED = 'throttled';
+	public const SERVED_INDEX     = 'index';
+	public const SERVED_SITEMAP   = 'sitemap';
 
 	/**
 	 * Returns the full table name including the WordPress prefix.
@@ -58,7 +59,8 @@ class MD4AI_Logger {
 			created_at DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
 			PRIMARY KEY  (id),
 			KEY idx_bot (bot_name, created_at),
-			KEY idx_post (post_id, created_at)
+			KEY idx_post (post_id, created_at),
+			KEY idx_created_at (created_at)
 		) {$charset_collate};";
 
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -81,14 +83,19 @@ class MD4AI_Logger {
 	/**
 	 * Writes a request row.
 	 *
-	 * `served` defaults to "markdown" so the existing call sites, which all
-	 * sit on a successful Markdown response, need no change.
-	 *
 	 * @param array{post_id:int,url:string,user_agent:string,bot_name:string,bytes_served:int,cache_hit:bool,served?:string,verified?:bool|null} $context Request context.
 	 */
 	public static function record( array $context ): void {
 		if ( ! md4ai_get_setting( 'enable_logging' ) ) {
 			return;
+		}
+
+		// array_key_exists, not isset: an explicit null means leave unchecked.
+		if ( ! array_key_exists( 'verified', $context ) ) {
+			$verdict = MD4AI_Verifier::verify( (string) ( $context['bot_name'] ?? '' ) );
+			if ( null !== $verdict ) {
+				$context['verified'] = $verdict;
+			}
 		}
 
 		$allow = apply_filters( 'md4ai_log_request', true, $context );
@@ -98,11 +105,11 @@ class MD4AI_Logger {
 
 		global $wpdb;
 
-		$ip      = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
+		$ip      = MD4AI_Verifier::client_ip();
 		$ip_hash = '' === $ip ? '' : hash( 'sha256', $ip . wp_salt( 'auth' ) );
 
 		$served = (string) ( $context['served'] ?? self::SERVED_MARKDOWN );
-		if ( ! in_array( $served, array( self::SERVED_MARKDOWN, self::SERVED_HTML, self::SERVED_BLOCKED, self::SERVED_THROTTLED ), true ) ) {
+		if ( ! in_array( $served, array( self::SERVED_MARKDOWN, self::SERVED_HTML, self::SERVED_BLOCKED, self::SERVED_THROTTLED, self::SERVED_INDEX, self::SERVED_SITEMAP ), true ) ) {
 			$served = self::SERVED_MARKDOWN;
 		}
 
@@ -119,8 +126,6 @@ class MD4AI_Logger {
 		);
 		$formats = array( '%d', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s' );
 
-		// NULL means "not checked"; $wpdb->insert() cannot write NULL through
-		// a format placeholder, so the column is only included when set.
 		if ( isset( $context['verified'] ) ) {
 			$row['verified'] = $context['verified'] ? 1 : 0;
 			$formats[]       = '%d';

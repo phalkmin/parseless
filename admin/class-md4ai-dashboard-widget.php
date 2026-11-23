@@ -60,7 +60,7 @@ class MD4AI_Dashboard_Widget {
 		echo '<p>' . esc_html(
 			sprintf(
 				/* translators: 1: request count, 2: cache hit rate */
-				__( '%1$d markdown requests served · %2$s cache hit rate (last 7 days)', 'parseless' ),
+				__( '%1$d requests logged · %2$s Markdown cache hit rate (last 7 days)', 'parseless' ),
 				$total,
 				$rate_label
 			)

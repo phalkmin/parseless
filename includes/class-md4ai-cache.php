@@ -17,7 +17,7 @@ class MD4AI_Cache {
 	private const PREFIX = 'md4ai_md_';
 
 	/**
-	 * Published post IDs, memoised for the request (see all_post_ids()).
+	 * Published post IDs, memoised for the request.
 	 *
 	 * @var int[]|null
 	 */
@@ -34,11 +34,7 @@ class MD4AI_Cache {
 	}
 
 	/**
-	 * Stores Markdown for a post, unless this request must not populate the
-	 * shared cache (see bypass()).
-	 *
-	 * The md4ai_cache_ttl filter receives the post ID so callers can vary the
-	 * lifetime per post (products, for instance, go stale faster).
+	 * Stores Markdown for a post unless the cache is bypassed.
 	 *
 	 * @param int    $post_id  Post ID.
 	 * @param string $markdown Markdown content.
@@ -52,14 +48,9 @@ class MD4AI_Cache {
 	}
 
 	/**
-	 * Returns the cache lifetime for a post's documents: the configured TTL
-	 * with the md4ai_cache_ttl filter applied.
+	 * Returns the filtered cache lifetime for a post's documents.
 	 *
-	 * The one place the filter runs for per-post documents, so the single-post
-	 * Markdown, the OKF concept and llms-full.txt all agree on how long a
-	 * given post may be cached.
-	 *
-	 * @param int $post_id Post ID, or 0 for a document spanning many posts.
+	 * @param int $post_id Post ID, or 0 for multi-post documents.
 	 * @return int Seconds.
 	 */
 	public static function ttl( int $post_id = 0 ): int {
@@ -76,18 +67,7 @@ class MD4AI_Cache {
 	}
 
 	/**
-	 * Whether the current request must not write to any shared cache.
-	 *
-	 * Rendering runs the_content in the requester's own session, so a
-	 * logged-in request can see what a membership plugin hides from the
-	 * public, or hide what it shows. Every cache in this plugin is keyed
-	 * without regard to who asked; storing a personalised rendering in one
-	 * would hand it to whoever asks next. Reads stay allowed — whatever is
-	 * cached was rendered anonymously, which is the public view these
-	 * endpoints exist to serve.
-	 *
-	 * Integrations whose output varies by other request state (a cookie, a
-	 * geolocated currency) can force the bypass via md4ai_cache_bypass.
+	 * Whether this request must skip shared-cache writes, as logged-in renders may be personalised.
 	 *
 	 * @return bool
 	 */
@@ -104,14 +84,9 @@ class MD4AI_Cache {
 	}
 
 	/**
-	 * Deletes every transient whose name starts with a prefix.
+	 * Deletes every wp_options transient whose name starts with a prefix.
 	 *
-	 * Per-post keys are not enumerable via the transients API, hence the
-	 * direct LIKE delete. On a persistent object cache the transients never
-	 * touched wp_options, so this finds nothing there; callers that need a
-	 * full clear on every backend follow up with purge_object_cache().
-	 *
-	 * @param string $prefix Transient-name prefix, e.g. "md4ai_md_".
+	 * @param string $prefix Transient-name prefix.
 	 */
 	public static function purge_prefix( string $prefix ): void {
 		global $wpdb;
@@ -127,14 +102,9 @@ class MD4AI_Cache {
 	}
 
 	/**
-	 * Deletes "<prefix><post ID>" for every post from a persistent object
-	 * cache, where purge_prefix()'s sweep cannot reach.
+	 * Deletes every post's prefixed transient from a persistent object cache.
 	 *
-	 * O(posts), so callers reserve it for settings saves — where the
-	 * alternative is a settings change that takes up to a week to show —
-	 * and never pay it on a single post save.
-	 *
-	 * @param string $prefix Transient-name prefix, e.g. "md4ai_md_".
+	 * @param string $prefix Transient-name prefix.
 	 */
 	public static function purge_object_cache( string $prefix ): void {
 		if ( ! wp_using_ext_object_cache() ) {
@@ -147,12 +117,7 @@ class MD4AI_Cache {
 	}
 
 	/**
-	 * Returns the ID of every post that can have a cached document.
-	 *
-	 * Only published posts are ever cached (is_post_servable), whatever
-	 * their type — so no type filter, which would miss types added through
-	 * the md4ai_supported_post_types filter. Memoised because a settings
-	 * save purges two prefixes and need not scan twice.
+	 * Returns the ID of every published post, of any type, that can have a cached document.
 	 *
 	 * @return int[]
 	 */

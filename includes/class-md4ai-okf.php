@@ -2,12 +2,6 @@
 /**
  * Open Knowledge Format (OKF) bundle endpoint.
  *
- * Serves an OKF bundle of the site's content for AI agents: an index.md
- * entry point, a log.md changelog, and one Markdown concept file per post,
- * cross-linked to each other. Detected off the request path like llms.txt
- * (no rewrite rules), with a ?format=okf query fallback for sites without
- * pretty permalinks.
- *
  * @package WP_Parseless
  */
 
@@ -28,11 +22,7 @@ class MD4AI_OKF {
 	private const DEFAULT_PATH    = 'okf';
 
 	/**
-	 * Returns the configured bundle base path (the segment before /index.md),
-	 * sanitised and defaulted. Filterable via md4ai_okf_endpoint.
-	 *
-	 * Public because MD4AI_Headers::reserved_path() needs the same answer to
-	 * guard the bundle from the ".md" suffix stripper.
+	 * Returns the configured bundle base path.
 	 *
 	 * @return string
 	 */
@@ -57,8 +47,6 @@ class MD4AI_OKF {
 			return;
 		}
 
-		// The bundle serves the same full content the Markdown endpoint 403s
-		// blocked crawlers from, so the block list and rate limit apply too.
 		MD4AI_Headers::enforce_access();
 
 		if ( 'index.md' === $file ) {
@@ -73,11 +61,7 @@ class MD4AI_OKF {
 	/**
 	 * Resolves which bundle file the current request is asking for.
 	 *
-	 * Recognises the path forms /<endpoint>/, /<endpoint>/index.md,
-	 * /<endpoint>/log.md and /<endpoint>/<slug>.md, plus the ?format=okf
-	 * (optionally &okf=<file>) fallback at the site root.
-	 *
-	 * @return string|null Bundle filename, or null when this is not an OKF request.
+	 * @return string|null Null when this is not an OKF request.
 	 */
 	private static function requested_file(): ?string {
 		$path     = md4ai_request_path();
@@ -92,16 +76,12 @@ class MD4AI_OKF {
 			if ( '' === $file ) {
 				return 'index.md';
 			}
-			// Nested paths are not bundle files; letting WordPress 404 them
-			// stops every concept being reachable at unlimited alias URLs.
 			if ( str_contains( $file, '/' ) ) {
 				return null;
 			}
 			return $file;
 		}
 
-		// Query fallback for plain-permalink sites, root only — ?format=okf on
-		// an arbitrary URL must not hijack that page.
 		if ( '' !== $path && 'index.php' !== $path ) {
 			return null;
 		}
@@ -109,9 +89,9 @@ class MD4AI_OKF {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only public endpoint, no state change.
 		$param = isset( $_GET[ $param_name ] ) ? sanitize_key( wp_unslash( $_GET[ $param_name ] ) ) : '';
 		if ( 'okf' === $param ) {
-			// phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- read-only public endpoint; reduced to a strict filename charset below because sanitize_file_name() strips the "%" octets that percent-encoded (non-ASCII) slugs contain.
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- read-only; strict charset filter below, as sanitize_file_name() strips "%".
 			$raw = isset( $_GET['okf'] ) ? (string) wp_unslash( $_GET['okf'] ) : '';
-			// Same charset serve_concept() enforces; anything else 404s there.
+			// Same charset serve_concept() enforces.
 			$file = (string) preg_replace( '/[^A-Za-z0-9%._-]/', '', $raw );
 			return '' === $file ? 'index.md' : $file;
 		}
@@ -124,7 +104,7 @@ class MD4AI_OKF {
 	 *
 	 * @param string   $key      Transient key.
 	 * @param callable $builder  Builds the document on miss.
-	 * @param int      $post_id  Post ID to attribute the fetch to (0 for index/log).
+	 * @param int      $post_id  Post ID to log, or 0.
 	 */
 	private static function serve_cached( string $key, callable $builder, int $post_id ): void {
 		$cache_hit = true;
@@ -173,15 +153,10 @@ class MD4AI_OKF {
 	}
 
 	/**
-	 * Returns a post the slug map admitted, if it is still servable right now.
-	 *
-	 * The map and the concept caches can outlive a direct delete or a
-	 * metadata-only noindex change that never reached save_post, so
-	 * membership is rechecked on every fetch — cache hit or not — rather
-	 * than trusted from the map.
+	 * Rechecks that a slug-map post is still servable, as the cached map can go stale.
 	 *
 	 * @param int $post_id Post ID from the slug map.
-	 * @return WP_Post|null Null when the post is gone or no longer eligible.
+	 * @return WP_Post|null Null when the post is gone or ineligible.
 	 */
 	private static function servable_post( int $post_id ): ?WP_Post {
 		$post = get_post( $post_id );
@@ -216,20 +191,15 @@ class MD4AI_OKF {
 
 		status_header( 200 );
 		header( 'Content-Type: text/markdown; charset=utf-8' );
-		// Bundle files duplicate canonical post URLs, so they get the same
-		// noindex treatment as the ".md" and "?format=md" forms.
 		header( 'X-Robots-Tag: noindex', true );
-		// The Blocked Bots check makes every bundle URL vary by User-Agent, so
-		// a shared cache keyed on URL alone must not store the response.
 		header( 'Cache-Control: private' );
-		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- plain-text Markdown response, not HTML; entity-encoding would corrupt the output.
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- plain-text Markdown, must not be entity-encoded.
 		echo $body;
 		exit;
 	}
 
 	/**
-	 * Returns the bot identifier to log for a bundle fetch: the crawler when
-	 * the UA names one, otherwise "manual" for the ?format=okf fallback.
+	 * Returns the bot name to log, or "manual" for the ?format=okf fallback.
 	 *
 	 * @return string
 	 */
@@ -339,11 +309,10 @@ class MD4AI_OKF {
 	}
 
 	/**
-	 * Builds a single concept file: OKF frontmatter plus Markdown body with
-	 * internal links rewritten to their concept filenames.
+	 * Builds a single concept file with frontmatter and bundle-relative links.
 	 *
 	 * @param WP_Post              $post Post object.
-	 * @param array<string, array> $map  Slug map from {@see self::slug_map()}.
+	 * @param array<string, array> $map  Slug map.
 	 * @return string
 	 */
 	private static function build_concept( WP_Post $post, array $map ): string {
@@ -401,8 +370,7 @@ class MD4AI_OKF {
 	}
 
 	/**
-	 * Rewrites Markdown links that point at other bundle concepts to their
-	 * "<slug>.md" filenames, so an agent can follow them within the bundle.
+	 * Rewrites links to other bundle concepts as "<slug>.md" filenames.
 	 *
 	 * @param string            $body         Concept Markdown body.
 	 * @param int               $source_id    The post this body belongs to.
@@ -424,17 +392,11 @@ class MD4AI_OKF {
 	}
 
 	/**
-	 * Builds the bundle's post set and the slug<->ID maps, reserving the
-	 * index/log filenames and de-duplicating slugs.
+	 * Builds the bundle's slug-to-ID and ID-to-slug maps.
 	 *
 	 * @return array{by_slug: array<string,int>, by_postid: array<int,string>}
 	 */
 	private static function slug_map(): array {
-		// The map build renders every bundle post (has_body), so it must not
-		// run per request: a cache miss here is the documented O(N) cold build.
-		// A logged-in requester never stores it (has_body varies by session,
-		// see MD4AI_Cache::bypass()), so they pay the build until the first
-		// anonymous fetch — a crawler's, in practice — warms it.
 		$cached = get_transient( self::MAP_TRANSIENT );
 		if ( is_array( $cached ) && isset( $cached['by_slug'], $cached['by_postid'] ) ) {
 			return $cached;
@@ -486,12 +448,6 @@ class MD4AI_OKF {
 	/**
 	 * Determines whether a post yields a concept with content in it.
 	 *
-	 * A concept file with frontmatter and no content wastes an agent's fetch
-	 * and makes the bundle look broken, so such posts are left out. A product
-	 * with no long description still gets its schema section — the price,
-	 * stock and SKU an agent actually wants — so it counts, and the cheap
-	 * check runs first to spare the render.
-	 *
 	 * @param WP_Post $post Post object.
 	 * @return bool
 	 */
@@ -538,11 +494,7 @@ class MD4AI_OKF {
 	}
 
 	/**
-	 * Returns a concept's tags, drawn from every public taxonomy registered
-	 * for its post type, deduped and capped at 12.
-	 *
-	 * Reading post_tag and category directly would miss product categories,
-	 * product attributes, and any custom post type's own taxonomies.
+	 * Returns a concept's tags from every public taxonomy of its post type.
 	 *
 	 * @param WP_Post $post Post object.
 	 * @return string[]
@@ -589,8 +541,7 @@ class MD4AI_OKF {
 	}
 
 	/**
-	 * Returns the public URL of the bundle entry point (the index), reflecting
-	 * the configured endpoint. Used by the settings page and llms.txt.
+	 * Returns the public URL of the bundle index.
 	 *
 	 * @return string
 	 */
@@ -599,17 +550,9 @@ class MD4AI_OKF {
 	}
 
 	/**
-	 * Clears every cached bundle document: index, log, slug map, and all
-	 * concept files.
+	 * Clears every cached bundle document, deleting the saved post's concept by key for object caches.
 	 *
-	 * Concepts embed cross-links to other concepts' slugs, so a single post
-	 * save (a slug can change) invalidates all of them. The prefix sweep is a
-	 * LIKE delete over wp_options, which persistent object caches don't see —
-	 * there, other posts' stale concepts simply expire by TTL, but the saved
-	 * post's own concept (the one guaranteed-stale document) is also deleted
-	 * by key so its edit shows up immediately on every cache backend.
-	 *
-	 * @param int $post_id Post whose save triggered the clear (0 when none).
+	 * @param int $post_id Saved post ID, or 0.
 	 */
 	public static function clear_cache( int $post_id = 0 ): void {
 		delete_transient( self::INDEX_TRANSIENT );
@@ -625,9 +568,6 @@ class MD4AI_OKF {
 
 	/**
 	 * Clears the whole bundle on every cache backend, concept files included.
-	 *
-	 * For settings saves, where the output of every concept changes at once
-	 * and waiting out the TTL on a persistent object cache is not acceptable.
 	 */
 	public static function purge_all(): void {
 		self::clear_cache();

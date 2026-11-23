@@ -11,10 +11,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Static lookup from a logged bot_name to its operator and purpose.
- *
- * Derived at read time from the UA substring the detector matched, so the
- * requests table needs no extra column and the map can be corrected in a
- * release without a migration.
  */
 class MD4AI_Bots {
 
@@ -27,7 +23,6 @@ class MD4AI_Bots {
 
 	/**
 	 * Known crawlers, keyed by the UA substring as it appears in the bot list.
-	 * Keys are matched case-insensitively against the stored bot_name.
 	 *
 	 * @var array<string, array{0:string, 1:string}> company, purpose.
 	 */
@@ -71,9 +66,6 @@ class MD4AI_Bots {
 
 	/**
 	 * Returns company and purpose for a logged bot_name.
-	 *
-	 * "manual" is the detector's label for a human using ?format=md; anything
-	 * else not in the map is a crawler the owner added by hand.
 	 *
 	 * @param string $bot_name Stored bot_name value.
 	 * @return array{company:string, purpose:string}
@@ -128,10 +120,6 @@ class MD4AI_Bots {
 
 	/**
 	 * Derives the KPI set from aggregated bot rows.
-	 *
-	 * "Chat impressions" counts fetches by user-triggered bots — the page was
-	 * read live while an assistant answered someone. "Distinct crawlers"
-	 * excludes manual and unknown traffic.
 	 *
 	 * @param array<int, array{bot_name:string, hits:int}> $rows Rows from MD4AI_Stats::top_bots().
 	 * @return array{chat_impressions:int, distinct_crawlers:int, by_company:array<string,int>, by_purpose:array<string,int>}

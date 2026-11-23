@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name:       ParseLess
+ * Plugin Name:       ParseLess – Markdown & llms.txt for AI Crawlers
  * Plugin URI:        https://phalkmin.me/en/parseless-wordpress-plugin/
  * Description:       Serves WordPress content as clean Markdown to AI crawlers and agents, shows which bots really read it, and lets you cap what they cost. Also exposes /llms.txt.
- * Version:           1.0.0
+ * Version:           1.1.0
  * Requires at least: 6.8
  * Requires PHP:      8.2
  * Author:            Paulo H. Alkmin
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MD4AI_VERSION', '1.0.0' );
+define( 'MD4AI_VERSION', '1.1.0' );
 define( 'MD4AI_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MD4AI_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
@@ -49,10 +49,6 @@ spl_autoload_register(
 /**
  * Returns public post types eligible for markdown serving.
  *
- * Excludes attachments and post types page builders register as public but
- * which hold configuration rather than content — Elementor's "Default Kit"
- * being the canonical example.
- *
  * @return string[]
  */
 function md4ai_supported_post_types(): array {
@@ -74,14 +70,7 @@ function md4ai_supported_post_types(): array {
 }
 
 /**
- * Returns the post types Markdown output is enabled for: the supported set
- * intersected with the owner's Enabled Post Types choice, with the public
- * md4ai_supported_post_types filter applied.
- *
- * May return an empty array (e.g. every saved type has since disappeared);
- * callers must treat that as "serve nothing", never as "serve everything" —
- * is_singular( array() ) and get_posts( post_type => array() ) both silently
- * widen back out.
+ * Returns the enabled post types; an empty array means serve nothing.
  *
  * @return string[]
  */
@@ -99,6 +88,7 @@ add_action( 'plugins_loaded', array( 'MD4AI_Robots', 'init' ) );
 add_action( 'plugins_loaded', array( 'MD4AI_RSL', 'init' ) );
 add_action( 'plugins_loaded', array( 'MD4AI_WooCommerce', 'init' ) );
 add_action( 'plugins_loaded', array( 'MD4AI_Abilities', 'init' ) );
+add_action( 'plugins_loaded', array( 'MD4AI_Verifier', 'init' ) );
 
 if ( is_admin() ) {
 	add_action( 'plugins_loaded', array( 'MD4AI_Settings', 'init' ) );
@@ -112,6 +102,7 @@ register_activation_hook(
 	static function (): void {
 		MD4AI_Logger::install();
 		MD4AI_Retention::schedule();
+		MD4AI_Verifier::schedule();
 	}
 );
 
@@ -119,6 +110,7 @@ register_deactivation_hook(
 	__FILE__,
 	static function (): void {
 		MD4AI_Retention::unschedule();
+		MD4AI_Verifier::unschedule();
 	}
 );
 

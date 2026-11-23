@@ -10,23 +10,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Reduces a possibly-HTML, possibly-entity-encoded string to clean plain text
- * suitable for Markdown metadata.
- *
- * Entities are decoded before tags are stripped: stripping first leaves
- * entity-encoded markup ("&amp;lt;script&amp;gt;") untouched, and the decode then
- * materializes it as live markup in the output. Decoding first turns it into
- * a real tag that wp_strip_all_tags() removes, contents included.
+ * Reduces a possibly-HTML string to plain text for Markdown metadata.
  *
  * @param string $value Raw value.
  * @return string
  */
 function md4ai_plain_text( string $value ): string {
+	// Decode before stripping, or encoded markup survives the strip and is decoded into live tags.
 	$text = html_entity_decode( $value, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-	// A "<" that can't open a tag (as in "3 < 5") or is never closed is
-	// content, not markup — but strip_tags() treats it as unclosed markup and
-	// discards everything after it. Re-encode those before stripping, restore
-	// them after.
+	// Shield a bare or unclosed "<" from strip_tags(), which would drop everything after it.
 	$text = (string) preg_replace( '/<(?![a-zA-Z\/!?])|<(?=[^>]*$)/', '&lt;', $text );
 	$text = wp_strip_all_tags( $text );
 	$text = str_replace( '&lt;', '<', $text );
@@ -45,10 +37,6 @@ function md4ai_yaml_quote( string $value ): string {
 
 /**
  * Returns the site title as plain text.
- *
- * `get_bloginfo( 'name' )` returns the `blogname` option HTML-entity-encoded
- * (e.g. an ampersand typed in Settings > General is stored as `&#038;`);
- * `md4ai_plain_text()` decodes it back to a literal character.
  *
  * @return string
  */
